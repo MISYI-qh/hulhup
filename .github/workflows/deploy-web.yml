@@ -1,0 +1,42 @@
+# Membangun Hulhup (Flutter web) dari repo MISYI-qh/hulhup-new-nih dan menerbitkannya ke GitHub Pages
+# di hulhup.my.id. Dijalankan manual. Butuh: Settings > Pages > Source = "GitHub Actions".
+name: deploy-web
+on: workflow_dispatch
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.dep.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: MISYI-qh/hulhup-new-nih, path: app }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - name: Siapkan proyek Flutter
+        working-directory: app
+        run: |
+          flutter create . --project-name hulhup --org app.misyi --platforms=android,web
+          bash tool/setup_android.sh
+          flutter pub get
+          dart run flutter_launcher_icons
+      - name: Build web
+        working-directory: app
+        run: flutter build web --release --base-href /
+      - name: Gabungkan CNAME dan service worker pembersih
+        run: |
+          cp CNAME app/build/web/CNAME
+          cp tool/sw-reset.js app/build/web/sw.js
+          touch app/build/web/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: app/build/web }
+      - id: dep
+        uses: actions/deploy-pages@v4
