@@ -24,7 +24,7 @@ jobs:
       - name: Siapkan proyek Flutter
         working-directory: app
         run: |
-          flutter create . --project-name hulhup --org app.misyi --platforms=android,web
+          flutter create . --project-name hulhup --org app.misyi --platforms=android,web,linux,windows,macos,ios
           bash tool/setup_android.sh
           flutter pub get
           dart run flutter_launcher_icons
