@@ -35,12 +35,16 @@ jobs:
           flutter build web --release --base-href / --pwa-strategy=none --dart-define=API_URL=https://hulhup-api.vercel.app
       - name: Build APK (diunduh dari hulhup.my.id)
         working-directory: app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: flutter build apk --release --dart-define=API_URL=https://hulhup-api.vercel.app --dart-define=BUILD=${{ github.run_number }}
       - name: Gabungkan CNAME dan service worker pembersih
         run: |
           cp CNAME app/build/web/CNAME
           cp tool/sw-reset.js app/build/web/sw.js
           touch app/build/web/.nojekyll
+          sed -i 's|main.dart.js|main.dart.js?v=${{ github.run_number }}|g' app/build/web/flutter_bootstrap.js
+          sed -i 's|flutter_bootstrap.js|flutter_bootstrap.js?v=${{ github.run_number }}|' app/build/web/index.html
           cp site/robots.txt site/sitemap.xml site/llms.txt site/llms-full.txt site/humans.txt app/build/web/
           cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/hulhup.apk
           echo '{"build": ${{ github.run_number }}, "version": "1.3.0"}' > app/build/web/version.json
