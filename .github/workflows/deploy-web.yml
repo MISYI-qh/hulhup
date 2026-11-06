@@ -30,7 +30,7 @@ jobs:
           dart run flutter_launcher_icons
       - name: Build web
         working-directory: app
-        run: flutter build web --release --base-href /
+        run: flutter build web --release --base-href / --dart-define=API_URL=https://hulhup-api.vercel.app
       - name: Gabungkan CNAME dan service worker pembersih
         run: |
           cp CNAME app/build/web/CNAME
