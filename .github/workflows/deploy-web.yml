@@ -30,7 +30,9 @@ jobs:
           dart run flutter_launcher_icons
       - name: Build web
         working-directory: app
-        run: flutter build web --release --base-href / --dart-define=API_URL=https://hulhup-api.vercel.app
+        run: |
+          cp ../site/index.html web/index.html
+          flutter build web --release --base-href / --pwa-strategy=none --dart-define=API_URL=https://hulhup-api.vercel.app
       - name: Build APK (diunduh dari hulhup.my.id)
         working-directory: app
         run: flutter build apk --release --dart-define=API_URL=https://hulhup-api.vercel.app --dart-define=BUILD=${{ github.run_number }}
@@ -39,8 +41,9 @@ jobs:
           cp CNAME app/build/web/CNAME
           cp tool/sw-reset.js app/build/web/sw.js
           touch app/build/web/.nojekyll
+          cp site/robots.txt site/sitemap.xml site/llms.txt site/llms-full.txt site/humans.txt app/build/web/
           cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/hulhup.apk
-          echo '{"build": ${{ github.run_number }}, "version": "1.2.0"}' > app/build/web/version.json
+          echo '{"build": ${{ github.run_number }}, "version": "1.3.0"}' > app/build/web/version.json
       - uses: actions/upload-pages-artifact@v3
         with: { path: app/build/web }
       - id: dep

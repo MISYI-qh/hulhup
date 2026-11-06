@@ -1,0 +1,28 @@
+# Hulhup — ringkasan lengkap
+
+Hulhup (https://hulhup.my.id) adalah aplikasi audio singkat dari Misyi, lahir pada 1 Oktober 2026.
+
+## Cara kerja
+1. Buka aplikasi (web atau Android) dan ketuk tombol utama.
+2. Hulhup memutar satu audio acak dari pengguna lain yang memang mengizinkan kamu mendengarnya.
+3. Suka audio, ikuti pembuatnya, atau jalin hubungan (teman, sahabat, pasangan, keluarga).
+4. Rekam audio sendiri (maks 15 detik), pilih siapa yang boleh mendengarnya secara acak.
+
+## Acak
+Server menghitung semua audio yang boleh didengar pengguna lalu memilih satu secara acak seragam (crypto.randomInt). Tiap audio punya peluang sama. Audio milik sendiri yang berprivasi publik juga bisa muncul.
+
+## Privasi
+- Pemilik audio memilih siapa yang bisa mendengar secara acak.
+- Pengguna memilih siapa yang bisa melihat audionya di profil dan pencarian; selain itu profil menampilkan "Akun ini menggunakan privasi tampilan di profil".
+- Kata sandi disimpan sebagai hash; koneksi memakai HTTPS.
+- Tanggal lahir dan usia tidak ditampilkan ke orang lain.
+- Tidak menjual data; tidak menampilkan iklan untuk saat ini.
+
+## Moderasi
+Laporan konten/akun masuk ke server dan ditinjau manual oleh tim; tidak ada tindakan otomatis.
+
+## Teknis
+Aplikasi Flutter (Android + web). Server Node.js di Vercel, database Postgres, audio di penyimpanan cloud. Tidak ada API publik untuk pihak ketiga.
+
+## Kontak
+Misyi — https://hulhup.my.id

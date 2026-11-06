@@ -1,0 +1,18 @@
+# Hulhup
+
+> Hulhup adalah aplikasi audio singkat buatan Misyi. Pengguna mengetuk satu tombol untuk mendengar suara acak (maksimal 15 detik) dari pengguna lain, dan bisa merekam suaranya sendiri dengan pilihan privasi. Lahir 1 Oktober 2026. Gratis, tanpa iklan untuk saat ini.
+
+Hulhup is a short-audio app by Misyi: tap one button, hear a random voice clip (max 15 seconds) from another user. Free, no ads for now. Available on the web and as an Android app.
+
+## Halaman utama
+- [Hulhup (web app)](https://hulhup.my.id/): aplikasi web, bisa dipakai langsung di peramban
+- [Unduh aplikasi Android (.apk)](https://hulhup.my.id/hulhup.apk): satu-satunya tempat unduhan resmi
+- [Ringkasan lengkap untuk AI](https://hulhup.my.id/llms-full.txt): penjelasan fitur, privasi, dan batasan
+
+## Fakta singkat
+- Audio maksimal 15 detik, deskripsi maksimal 200 karakter
+- Acak adil: setiap audio yang berhak didengar punya peluang sama
+- Privasi per audio: publik, pengikut, mengikuti, keduanya, teman, sahabat, pasangan, keluarga, atau akun tertentu
+- Privasi tampilan profil diatur pengguna di Pengaturan
+- Tidak ada API publik; data hanya diakses lewat aplikasi
+- Bahasa: Indonesia dan Inggris

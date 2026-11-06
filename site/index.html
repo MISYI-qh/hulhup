@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Hulhup — ketuk, dengarkan suara acak</title>
+  <meta name="description" content="Hulhup: ketuk satu tombol, dengarkan suara singkat acak (maks 15 detik) dari orang lain. Rekam suaramu, atur siapa yang boleh mendengar. Produk Misyi.">
+  <meta name="theme-color" content="#FEFDF9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0E1511" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <link rel="canonical" href="https://hulhup.my.id/">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Hulhup">
+  <meta property="og:title" content="Hulhup — ketuk, dengarkan suara acak">
+  <meta property="og:description" content="Ketuk satu tombol, dengarkan suara singkat acak dari orang lain.">
+  <meta property="og:url" content="https://hulhup.my.id/">
+  <meta property="og:image" content="https://hulhup.my.id/icons/Icon-512.png">
+  <meta property="og:locale" content="id_ID">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Hulhup — ketuk, dengarkan suara acak">
+  <meta name="twitter:description" content="Ketuk satu tombol, dengarkan suara singkat acak dari orang lain.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Hulhup">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://hulhup-api.vercel.app" crossorigin>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"WebApplication","name":"Hulhup","url":"https://hulhup.my.id/","description":"Aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik) dari pengguna lain.","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Android, Web","inLanguage":["id","en"],"offers":{"@type":"Offer","price":"0","priceCurrency":"IDR"},"creator":{"@type":"Organization","name":"Misyi"},"datePublished":"2026-10-01"}
+  </script>
+  <style>
+    html,body{margin:0;height:100%;background:#FEFDF9;color:#163F2B;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+    #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:#FEFDF9;z-index:9;transition:opacity .25s}
+    #splash h1{margin:18px 0 6px;font-size:30px;letter-spacing:-.5px}
+    #splash p{margin:0;max-width:320px;font-size:14px;line-height:1.5;opacity:.65}
+    .ring{width:44px;height:44px;border-radius:50%;border:4px solid rgba(22,63,43,.14);border-top-color:#163F2B;animation:s .8s linear infinite}
+    @keyframes s{to{transform:rotate(360deg)}}
+    @media (prefers-color-scheme:dark){html,body,#splash{background:#0E1511;color:#E9F1EA}.ring{border-color:rgba(233,241,234,.16);border-top-color:#8CC4A6}}
+    @media (prefers-reduced-motion:reduce){.ring{animation-duration:2.4s}}
+  </style>
+</head>
+<body>
+  <div id="splash" role="status" aria-live="polite">
+    <div class="ring" aria-hidden="true"></div>
+    <h1>Hulhup</h1>
+    <p>Ketuk, dengarkan suara acak. Memuat…</p>
+  </div>
+  <noscript><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
+  <script>
+    (function(){var s=document.getElementById('splash');function d(){if(!s)return;s.style.opacity=0;setTimeout(function(){s&&s.remove();s=null},260)}
+    window.addEventListener('flutter-first-frame',d);setTimeout(d,15000)})();
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
