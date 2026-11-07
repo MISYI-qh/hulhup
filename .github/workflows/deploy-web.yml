@@ -32,6 +32,7 @@ jobs:
           bash tool/setup_android.sh
           flutter pub get
           dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
       - name: Build web
         working-directory: app
         run: |
