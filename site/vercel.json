@@ -16,6 +16,7 @@
     { "source": "/(main.dart.wasm|main.dart.mjs)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" } ] },
     { "source": "/canvaskit/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=86400" } ] },
     { "source": "/(assets|icons)/(.*)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" } ] },
+    { "source": "/(favicon.png|manifest.json)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" } ] },
     { "source": "/version.json", "headers": [ { "key": "Cache-Control", "value": "no-store" } ] },
     { "source": "/(hulhup|hulhup-32).apk", "headers": [ { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }, { "key": "Content-Type", "value": "application/vnd.android.package-archive" }, { "key": "Content-Disposition", "value": "attachment; filename=hulhup.apk" } ] },
     { "source": "/(llms.txt|llms-full.txt|robots.txt|sitemap.xml|humans.txt)", "headers": [ { "key": "Cache-Control", "value": "public, max-age=3600" } ] }

@@ -32,22 +32,36 @@
   {"@context":"https://schema.org","@type":"WebApplication","name":"Hulhup","url":"https://hulhup.my.id/","description":"Aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik) dari pengguna lain.","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Android, Web","inLanguage":["id","en"],"offers":{"@type":"Offer","price":"0","priceCurrency":"IDR"},"creator":{"@type":"Organization","name":"Misyi"},"datePublished":"2026-10-01"}
   </script>
   <style>
-    html,body{margin:0;height:100%;background:#FEFDF9;color:#163F2B;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:#FEFDF9;z-index:9;transition:opacity .25s}
-    #splash h1{margin:18px 0 6px;font-size:30px;letter-spacing:-.5px}
-    #splash p{margin:0;max-width:320px;font-size:14px;line-height:1.5;opacity:.65}
-    .ring{width:44px;height:44px;border-radius:50%;border:4px solid rgba(22,63,43,.14);border-top-color:#163F2B;animation:s .8s linear infinite}
-    @keyframes s{to{transform:rotate(360deg)}}
-    @media (prefers-color-scheme:dark){html,body,#splash{background:#0E1511;color:#E9F1EA}.ring{border-color:rgba(233,241,234,.16);border-top-color:#8CC4A6}}
-    @media (prefers-reduced-motion:reduce){.ring{animation-duration:2.4s}}
+    #splash{position:fixed;inset:0;display:flex;flex-direction:column;background:#FEFDF9;color:#163F2B;z-index:9;transition:opacity .25s}
+    #splash .bar{display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 8px}
+    #splash .ib{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+    #splash .ib svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+    #splash .brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:20px;letter-spacing:-.4px;margin:0}
+    #splash .logo{width:28px;height:28px;border-radius:50%;background:#163F2B;display:flex;align-items:center;justify-content:center;gap:2px}
+    #splash .logo i{display:block;width:2.5px;border-radius:2px;background:#FEFDF9}
+    #splash .mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    #splash .btn{width:172px;height:172px;border-radius:50%;background:#163F2B;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 0 0 14px rgba(22,63,43,.07),0 0 0 32px rgba(22,63,43,.04),0 18px 40px rgba(22,63,43,.22)}
+    #splash .btn i{display:block;width:6px;border-radius:3px;background:#FEFDF9}
+    #splash .n{margin-top:52px;font-size:38px;font-weight:800;letter-spacing:-1.2px}
+    #splash .pill{margin-top:16px;padding:9px 14px;border-radius:22px;background:rgba(22,63,43,.07);font-size:13px;font-weight:700}
+    html,body{margin:0;height:100%;background:#FEFDF9;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+    @media (prefers-color-scheme:dark){html,body,#splash{background:#0E1511;color:#E9F1EA}#splash .logo,#splash .btn{background:#8CC4A6}#splash .logo i,#splash .btn i{background:#0E1511}#splash .pill{background:rgba(233,241,234,.09)}}
   </style>
 </head>
 <body>
-  <div id="splash" role="status" aria-live="polite">
-    <div class="ring" aria-hidden="true"></div>
-    <h1>Hulhup</h1>
-    <p>Ketuk, dengarkan suara acak. Memuat…</p>
+  <div id="splash" aria-hidden="true">
+    <div class="bar">
+      <div class="ib"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
+      <div class="brand"><span class="logo"><i style="height:6px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:12px"></i><i style="height:6px"></i></span>Hulhup</div>
+      <div style="display:flex"><div class="ib"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div><div class="ib"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg></div></div>
+    </div>
+    <div class="mid">
+      <div class="btn"><i style="height:16px"></i><i style="height:34px"></i><i style="height:52px"></i><i style="height:34px"></i><i style="height:16px"></i></div>
+      <div class="n">0</div>
+      <div class="pill">Publik</div>
+    </div>
   </div>
+  <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Hulhup — ketuk, dengarkan suara acak</h1>
   <noscript><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
   <script>
     (function(){var s=document.getElementById('splash');function d(){if(!s)return;s.style.opacity=0;setTimeout(function(){s&&s.remove();s=null},260)}
