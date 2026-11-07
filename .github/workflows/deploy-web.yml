@@ -41,7 +41,7 @@ jobs:
         working-directory: app
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: flutter build apk --release --dart-define=API_URL=https://hulhup-api.vercel.app --dart-define=BUILD=${{ github.run_number }}
+        run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --dart-define=API_URL=https://hulhup-api.vercel.app --dart-define=BUILD=${{ github.run_number }}
       - name: Gabungkan CNAME dan service worker pembersih
         run: |
           cp CNAME app/build/web/CNAME
@@ -51,8 +51,10 @@ jobs:
           sed -i 's|flutter_bootstrap.js|flutter_bootstrap.js?v=${{ github.run_number }}|' app/build/web/index.html
           cp site/robots.txt site/sitemap.xml site/llms.txt site/llms-full.txt site/humans.txt app/build/web/
           cp site/vercel.json app/build/web/vercel.json
-          cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/hulhup.apk
-          echo '{"build": ${{ github.run_number }}, "version": "1.3.0"}' > app/build/web/version.json
+          cp app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk app/build/web/hulhup.apk
+          cp app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk app/build/web/hulhup-32.apk
+          S64=$(stat -c%s app/build/web/hulhup.apk); S32=$(stat -c%s app/build/web/hulhup-32.apk)
+          echo "{\"build\": ${{ github.run_number }}, \"version\": \"1.3.0\", \"size\": $S64, \"size32\": $S32}" > app/build/web/version.json
       - name: Terbitkan ke Vercel (jika VERCEL_TOKEN ada)
         if: ${{ env.VT != '' }}
         run: npx --yes vercel@latest deploy app/build/web --prod --yes --token "$VT"
