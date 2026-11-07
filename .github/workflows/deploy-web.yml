@@ -36,7 +36,10 @@ jobs:
         working-directory: app
         run: |
           cp ../site/index.html web/index.html
-          flutter build web --release --base-href / --pwa-strategy=none --dart-define=API_URL=https://hulhup-api.vercel.app
+          # Utamakan WebAssembly (jauh lebih ringan di CPU HP); bila ada paket yang belum kompatibel, pakai build JavaScript biasa.
+          flutter build web --release --wasm --no-web-resources-cdn --base-href / --pwa-strategy=none --dart-define=API_URL=https://hulhup-api.vercel.app \
+            || flutter build web --release --no-web-resources-cdn --base-href / --pwa-strategy=none --dart-define=API_URL=https://hulhup-api.vercel.app
+          ls build/web | head -40
       - name: Build APK (diunduh dari hulhup.my.id)
         working-directory: app
         env:
