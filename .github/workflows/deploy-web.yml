@@ -53,6 +53,7 @@ jobs:
           sed -i 's|main.dart.js|main.dart.js?v=${{ github.run_number }}|g' app/build/web/flutter_bootstrap.js
           sed -i 's|flutter_bootstrap.js|flutter_bootstrap.js?v=${{ github.run_number }}|' app/build/web/index.html
           cp site/robots.txt site/sitemap.xml site/llms.txt site/llms-full.txt site/humans.txt app/build/web/
+          cp site/favicon.png site/favicon.ico site/favicon-48.png app/build/web/
           cp site/vercel.json app/build/web/vercel.json
           cp app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk app/build/web/hulhup.apk
           cp app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk app/build/web/hulhup-32.apk
