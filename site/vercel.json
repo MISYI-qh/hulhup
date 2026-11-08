@@ -132,8 +132,8 @@
   ],
   "rewrites": [
     {
-      "source": "/p/:id",
-      "destination": "/index.html"
+      "source": "/:path((?!.*\\.).*)",
+      "destination": "/"
     }
   ]
 }

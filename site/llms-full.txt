@@ -6,10 +6,16 @@ Hulhup (https://hulhup.my.id) adalah aplikasi audio singkat dari Misyi, lahir pa
 1. Buka aplikasi (web atau Android) dan ketuk tombol utama.
 2. Hulhup memutar satu audio acak dari pengguna lain yang memang mengizinkan kamu mendengarnya.
 3. Suka audio, ikuti pembuatnya, atau jalin hubungan (teman, sahabat, pasangan, keluarga).
-4. Rekam audio sendiri (maks 15 detik), pilih siapa yang boleh mendengarnya secara acak.
+4. Rekam audio sendiri (maks 15 detik, 1 MB), pilih siapa yang boleh mendengarnya secara acak.
 
 ## Acak
 Server menghitung semua audio yang boleh didengar pengguna lalu memilih satu secara acak seragam (crypto.randomInt). Tiap audio punya peluang sama. Audio milik sendiri yang berprivasi publik juga bisa muncul.
+
+## Hups
+Hups adalah linimasa tulisan. Satu post berisi teks (boleh panjang) dan maksimal 1 audio berukuran maksimal 1 MB; penulis dapat menandai audionya sebagai backsound (terputar otomatis saat post terlihat, bisa dimatikan pembaca, bisa menyala bersama audio lain). Komentar boleh membawa hingga 3 audio, bisa dibalas bersarang, dan penulis post dapat menyematkan satu komentar; komentar penulis diberi label "Penulis". Akun bisa ditandai dengan @nama pengguna dan mendapat notifikasi. Urutan Hups dihitung dari sorot, komentar, dan waktu (yang baru lebih berpeluang di atas). Post tanpa audio hanya muncul di Hups, tidak di Acak. Semua pilihan audiens bisa dipilih lebih dari satu.
+
+## Alamat halaman
+Setiap halaman punya alamat sendiri, mis. /p/ID (post), /u/NAMA (akun), /notifications, /settings, /faq.
 
 ## Privasi
 - Pemilik audio memilih siapa yang bisa mendengar secara acak.
