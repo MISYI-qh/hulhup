@@ -3,7 +3,7 @@
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <title>Hulhup — ketuk, dengarkan suara acak</title>
   <meta name="description" content="Hulhup: ketuk satu tombol, dengarkan suara singkat acak (maks 15 detik) dari orang lain. Rekam suaramu, atur siapa yang boleh mendengar. Produk Misyi.">
   <meta name="theme-color" content="#FEFDF9" media="(prefers-color-scheme: light)">
@@ -33,20 +33,17 @@
   {"@context":"https://schema.org","@type":"WebApplication","name":"Hulhup","url":"https://hulhup.my.id/","description":"Aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik) dari pengguna lain.","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Android, Web","inLanguage":["id","en"],"offers":{"@type":"Offer","price":"0","priceCurrency":"IDR"},"creator":{"@type":"Organization","name":"Misyi"},"datePublished":"2026-10-01"}
   </script>
   <style>
-    #splash{position:fixed;inset:0;display:flex;flex-direction:column;background:#FEFDF9;color:#163F2B;z-index:9;transition:opacity .25s}
-    #splash .mid{flex:1;display:flex;align-items:center;justify-content:center}
-    #splash .logo{border-radius:50%;background:#163F2B;display:flex;align-items:center;justify-content:center}
-    #splash .logo i{display:block;border-radius:4px;background:#FEFDF9}
-    #splash .big{width:120px;height:120px;gap:6px}
-    #splash .big i{width:7px}
-    #splash .foot{text-align:center;padding-bottom:56px;font-weight:800;font-size:22px;letter-spacing:-.4px}
-    html,body{margin:0;height:100%;background:#FEFDF9;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-    @media (prefers-color-scheme:dark){html,body,#splash{background:#0E1511;color:#E9F1EA}#splash .logo{background:#8CC4A6}#splash .logo i{background:#0E1511}}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#FEFDF9;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+    #splash{position:fixed;left:0;top:0;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#FEFDF9;color:#163F2B;z-index:9;transition:opacity .25s}
+    #splash svg{width:96px;height:96px;display:block}
+    #splash .c{fill:#163F2B}#splash .b{stroke:#FEFDF9;stroke-width:7;stroke-linecap:round}
+    #splash .foot{font-weight:800;font-size:22px;letter-spacing:-.4px}
+    @media (prefers-color-scheme:dark){html,body,#splash{background:#0E1511;color:#E9F1EA}#splash .c{fill:#8CC4A6}#splash .b{stroke:#0E1511}}
   </style>
 </head>
 <body>
   <div id="splash" aria-hidden="true">
-    <div class="mid"><span class="logo big"><i style="height:22px"></i><i style="height:46px"></i><i style="height:64px"></i><i style="height:46px"></i><i style="height:22px"></i></span></div>
+    <svg viewBox="0 0 96 96" aria-hidden="true"><circle class="c" cx="48" cy="48" r="48"/><path class="b" d="M26 40v16M37 32v32M48 25v46M59 32v32M70 40v16"/></svg>
     <div class="foot">Hulhup</div>
   </div>
   <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Hulhup — ketuk, dengarkan suara acak</h1>
