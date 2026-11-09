@@ -46,6 +46,15 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64 --dart-define=API_URL=https://hulhup-api.vercel.app --dart-define=BUILD=${{ github.run_number }}
+      - name: Tautan aplikasi (Android App Links)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          FP=$(keytool -list -v -keystore app/tool/hulhup.p12 -storetype PKCS12 -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -m1 'SHA256:' | sed 's/.*SHA256: *//')
+          test -n "$FP"
+          mkdir -p app/build/web/.well-known
+          printf '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"app.misyi.hulhup","sha256_cert_fingerprints":["%s"]}}]' "$FP" > app/build/web/.well-known/assetlinks.json
+          cat app/build/web/.well-known/assetlinks.json
       - name: Gabungkan CNAME dan service worker pembersih
         run: |
           cp CNAME app/build/web/CNAME
