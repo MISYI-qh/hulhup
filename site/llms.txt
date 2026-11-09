@@ -10,7 +10,7 @@ Hulhup is a short-audio app by Misyi: tap one button, hear a random voice clip (
 - [Ringkasan lengkap untuk AI](https://hulhup.my.id/llms-full.txt): penjelasan fitur, privasi, dan batasan
 
 ## Fakta singkat
-- Audio maksimal 15 detik dan 1 MB; deskripsi maksimal 200 karakter
+- Audio maksimal 15 detik dan 1 MB; teks post, deskripsi, dan komentar tidak dibatasi panjangnya
 - Hups: linimasa tulisan dengan 1 audio opsional (bisa dijadikan backsound), komentar dengan hingga 3 audio, balasan bersarang, tag @akun, sematkan komentar, laporan
 - Urutan Hups dipengaruhi sorot, komentar, dan waktu; Acak tetap 100% acak dan hanya berisi post beraudio
 - Setiap post dan akun punya alamat sendiri: https://hulhup.my.id/p/ID dan https://hulhup.my.id/u/NAMA

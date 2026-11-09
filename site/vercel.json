@@ -133,7 +133,13 @@
   "rewrites": [
     {
       "source": "/:path((?!.*\\.).*)",
-      "destination": "/"
+      "destination": "/api/page?p=/:path"
     }
-  ]
+  ],
+  "functions": {
+    "api/page.js": {
+      "includeFiles": "index.html",
+      "maxDuration": 10
+    }
+  }
 }
