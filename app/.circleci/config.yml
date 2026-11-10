@@ -1,0 +1,36 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: ghcr.io/cirruslabs/flutter:stable
+    resource_class: large
+    environment:
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3g"
+    steps:
+      - checkout
+      - run:
+          name: Buat folder platform
+          command: flutter create . --project-name hulhup --org app.misyi --platforms=android,web,linux,windows,macos,ios
+      - run:
+          name: Izin, nama, ikon notifikasi, Gradle
+          command: bash tool/setup_android.sh
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run:
+          name: Build APK
+          command: flutter build apk --release
+      - run:
+          name: Build web
+          command: flutter build web --release && cd build && zip -qr web.zip web
+      - store_artifacts:
+          path: build/app/outputs/flutter-apk/app-release.apk
+          destination: hulhup.apk
+      - store_artifacts:
+          path: build/web.zip
+          destination: hulhup-web.zip
+
+workflows:
+  build:
+    jobs:
+      - build

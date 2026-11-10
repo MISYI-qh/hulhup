@@ -1,0 +1,23 @@
+name: build
+on: workflow_dispatch
+env:
+  API_URL: https://hulhup-api.vercel.app
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - name: Buat folder platform
+        run: flutter create . --project-name hulhup --org app.misyi --platforms=android,web,linux,windows,macos,ios
+      - name: Izin, nama, ikon notifikasi, Gradle
+        run: bash tool/setup_android.sh
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter build apk --release --dart-define=API_URL=$API_URL --dart-define=BUILD=${{ github.run_number }}
+      - run: flutter build web --release --dart-define=API_URL=$API_URL
+      - uses: actions/upload-artifact@v4
+        with: { name: hulhup-apk, path: build/app/outputs/flutter-apk/app-release.apk }
+      - uses: actions/upload-artifact@v4
+        with: { name: hulhup-web, path: build/web }

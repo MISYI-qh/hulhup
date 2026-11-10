@@ -1,0 +1,438 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'routes.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'extra.dart';
+import 'apk_web.dart' if (dart.library.io) 'apk_io.dart';
+import 'core.dart';
+import 'ui.dart';
+import 'pages.dart';
+import 'hups.dart';
+
+class HomePage extends StatefulWidget {
+  final int mode0;
+  const HomePage({super.key, this.mode0 = 0});
+  @override
+  State<HomePage> createState() => _HomeState();
+}
+
+class _HomeState extends State<HomePage> {
+  bool menu = false, _busy = false;
+  late int mode = widget.mode0; // 0 = Acak, 1 = Hups
+
+  @override
+  void initState() { super.initState(); Store.i.homeMode = mode; }
+
+  Future<void> _tap() async {
+    if (_busy) return;
+    _busy = true;
+    final s = Store.i;
+    try {
+      final a = await s.random();
+      if (!mounted) return;
+      if (a == null) { toast(s.t(s.fromOffline ? 'no_net_empty' : (s.me != null && s.filter != 'public') ? 'nofilter' : 'nobody')); return; }
+      if (s.fromOffline) toast(s.t('no_net'));
+      if (a.url.isNotEmpty) s.play(a, force: true).catchError((_) => toast(s.t('e_server'), bad: true));
+      sheet(context, (_) => PopupBody(a)).then((_) { if (s.playing == a.id) s.stop(); });
+    } catch (e) {
+      toast(s.err(e), bad: true);
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<void> _filter() async {
+    final s = Store.i;
+    final r = await multiSheet(context, s.t('filter_title'), filterAud, s.me == null ? 'public' : s.filter, filter: true);
+    if (r == null) return;
+    if (s.me == null && r != 'public') { toast(s.t('filter_login')); return; }
+    await s.setFilter(r);
+  }
+
+  Widget _filterChip(Store s) => ListenableBuilder(listenable: s, builder: (_, __) {
+        final f = s.me == null ? 'public' : s.filter;
+        return Tap(onTap: _filter, scale: .96, child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9), decoration: BoxDecoration(color: soft(context), borderRadius: BorderRadius.circular(22)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(audIcon(audSplit(f).first, filter: true), size: 16, color: ink(context)), const SizedBox(width: 7), Flexible(child: Text(audText(f, filter: true), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600))), const SizedBox(width: 2), Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: sub(context))]),
+        ));
+      });
+
+  Widget _randBody(Store s) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TapButton(onTap: _tap),
+        const SizedBox(height: 20),
+        ListenableBuilder(listenable: s, builder: (_, __) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (w, a) => FadeTransition(opacity: a, child: SlideTransition(position: Tween(begin: const Offset(0, .3), end: Offset.zero).animate(a), child: w)),
+          child: Text(fmt(s.taps), key: ValueKey(s.taps), style: TextStyle(fontSize: 38, fontWeight: FontWeight.w800, letterSpacing: -1.2, color: ink(context))),
+        )),
+        const SizedBox(height: 16),
+        _filterChip(s),
+      ]));
+
+  Widget _hupsBody(Store s) => Column(children: [
+        Padding(padding: const EdgeInsets.only(bottom: 8), child: _filterChip(s)),
+        Expanded(child: ListenableBuilder(listenable: s, builder: (_, __) {
+          final f = s.me == null ? 'public' : s.filter;
+          return Stack(children: [
+            HupsFeed(f, key: ValueKey('hf_$f${s.me?.username}')),
+            Positioned(right: 20, bottom: 14, child: Tap(onTap: () => go(context, s.me == null ? const AuthPage() : const ComposePage()), child: Container(width: 56, height: 56, decoration: BoxDecoration(color: btnBg(context), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .35), blurRadius: 22, offset: const Offset(0, 10))]), child: const Center(child: HIcon(HK.add, size: 26, color: cream))))),
+          ]);
+        })),
+      ]);
+
+  Widget _switcher(Store s) {
+    Widget seg(int i, HK k, String label) {
+      final on = mode == i;
+      return Expanded(child: Tap(onTap: () { if (mode != i) { setState(() => mode = i); Store.i.homeMode = i; syncHomeUrl(); } }, scale: .97, child: AnimatedContainer(
+        duration: const Duration(milliseconds: 260), curve: Curves.easeOutCubic, height: 44,
+        decoration: BoxDecoration(color: on ? ink(context) : Colors.transparent, borderRadius: BorderRadius.circular(22)),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [HIcon(k, size: 19, color: on ? bgOf(context) : sub(context)), const SizedBox(width: 8), Text(label, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: on ? bgOf(context) : sub(context)))]),
+      )));
+    }
+    return SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(60, 6, 60, 12), child: Container(
+      padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: soft(context), borderRadius: BorderRadius.circular(26)),
+      child: Row(children: [seg(0, HK.acak, s.t('rand_tab')), seg(1, HK.hups, s.t('hups'))]),
+    )));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    return PopScope(
+      canPop: !menu && mode == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (menu) { setState(() => menu = false); } else if (mode != 0) { setState(() => mode = 0); Store.i.homeMode = 0; syncHomeUrl(); }
+      },
+      child: Scaffold(
+      body: Stack(children: [
+        Column(children: [
+          TopBar(
+            lead: IconBtn(Icons.menu_rounded, () => setState(() => menu = true)),
+            center: const Brand(),
+            actions: [IconBtn(Icons.search_rounded, () => go(context, const SearchPage())), ListenableBuilder(listenable: s, builder: (_, __) => IconBtn(Icons.person_outline_rounded, () => go(context, ProfilePage(s.me?.username)), dot: s.unread > 0))],
+          ),
+          ListenableBuilder(listenable: s, builder: (_, __) => !s.updateReady ? const SizedBox() : Padding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 0), child: Tap(onTap: () => showUpdate(context), scale: .98, child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: soft(context), borderRadius: BorderRadius.circular(18)),
+            child: Row(children: [Icon(Icons.system_update_rounded, size: 20, color: ink(context)), const SizedBox(width: 12), Expanded(child: Text(s.t('upd_title'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14))), Text(s.t('upd_btn'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))]),
+          )))),
+          Expanded(child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            child: mode == 0 ? KeyedSubtree(key: const ValueKey('rand'), child: _randBody(s)) : KeyedSubtree(key: const ValueKey('hups'), child: _hupsBody(s)),
+          )),
+          _switcher(s),
+        ]),
+        SideMenu(open: menu, close: () => setState(() => menu = false)),
+      ]),
+    ));
+  }
+}
+
+class TapButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const TapButton({super.key, required this.onTap});
+  @override
+  State<TapButton> createState() => _TapButtonState();
+}
+
+class _TapButtonState extends State<TapButton> with TickerProviderStateMixin {
+  late final idle = AnimationController(vsync: this, duration: const Duration(seconds: 5))..repeat();
+  late final burst = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+  bool down = false;
+  @override
+  void dispose() { idle.dispose(); burst.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    final ring = ink(context);
+    return SizedBox(width: 330, height: 330, child: Stack(alignment: Alignment.center, children: [
+      AnimatedBuilder(animation: Listenable.merge([idle, burst]), builder: (_, __) => CustomPaint(size: const Size(330, 330), painter: _Rings(idle.value, burst.value, ring))),
+      GestureDetector(
+        onTapDown: (_) => setState(() => down = true),
+        onTapCancel: () => setState(() => down = false),
+        onTapUp: (_) => setState(() => down = false),
+        onTap: () { HapticFeedback.mediumImpact(); burst.forward(from: 0); widget.onTap(); },
+        child: AnimatedScale(
+          scale: down ? .94 : 1, duration: const Duration(milliseconds: 150), curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150), width: 204, height: 204,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(center: Alignment(-.36, -.52), radius: 1.1, colors: [Color(0xFF3C7357), Color(0xFF235A3E), green, Color(0xFF0F2E1F)], stops: [0, .38, .75, 1]),
+              boxShadow: [BoxShadow(color: green.withValues(alpha: down ? .2 : .36), blurRadius: down ? 24 : 52, offset: Offset(0, down ? 10 : 26))],
+            ),
+            child: const Center(child: Logo(96, cream)),
+          ),
+        ),
+      ),
+    ]));
+  }
+}
+
+class _Rings extends CustomPainter {
+  final double t, b;
+  final Color c;
+  _Rings(this.t, this.b, this.c);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final o = size.center(Offset.zero);
+    for (var i = 0; i < 3; i++) {
+      final k = (t + i / 3) % 1;
+      canvas.drawCircle(o, 106 + k * 56, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.2..color = c.withValues(alpha: (1 - k) * .16));
+    }
+    if (b > 0 && b < 1) {
+      final e = Curves.easeOutCubic.transform(b);
+      canvas.drawCircle(o, 102 + e * 62, Paint()..style = PaintingStyle.stroke..strokeWidth = 2.4..color = c.withValues(alpha: (1 - b) * .4));
+    }
+  }
+  @override
+  bool shouldRepaint(_Rings o) => true;
+}
+
+class SideMenu extends StatefulWidget {
+  final bool open;
+  final VoidCallback close;
+  const SideMenu({super.key, required this.open, required this.close});
+  @override
+  State<SideMenu> createState() => _SideMenuState();
+}
+
+class _SideMenuState extends State<SideMenu> {
+  bool more = false;
+  @override
+  Widget build(BuildContext context) {
+    final open = widget.open, close = widget.close;
+    final s = Store.i;
+    Widget item(IconData i, String k, Widget Function() p) => Tap(onTap: () { close(); go(context, p()); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8), child: Row(children: [Icon(i, size: 24, color: ink(context)), const SizedBox(width: 16), Text(s.t(k), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))])));
+    return Stack(children: [
+      IgnorePointer(ignoring: !open, child: GestureDetector(onTap: close, child: AnimatedOpacity(opacity: open ? 1 : 0, duration: const Duration(milliseconds: 300), child: Container(color: Colors.black45)))),
+      AnimatedPositioned(
+        duration: const Duration(milliseconds: 380), curve: Curves.easeOutCubic, left: open ? 0 : -320, top: 0, bottom: 0, width: 300,
+        child: Container(
+          decoration: BoxDecoration(color: bgOf(context), borderRadius: const BorderRadius.horizontal(right: Radius.circular(36)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .2), blurRadius: 40)]),
+          child: SafeArea(child: ListenableBuilder(listenable: s, builder: (_, __) => Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Brand(),
+            const SizedBox(height: 28),
+            Padding(padding: const EdgeInsets.only(bottom: 8), child: PBtn(s.t('create'), () { close(); go(context, s.me == null ? const AuthPage() : const ComposePage()); }, icon: Icons.add_rounded)),
+            item(Icons.tune_rounded, 'settings', () => const SettingsPage()),
+            if (s.me != null) item(Icons.send_outlined, 'sent_title', () => const SentPage()),
+            item(Icons.download_done_rounded, 'offline_t', () => const OfflinePage()),
+            item(Icons.help_outline_rounded, 'faq', () => const FaqPage()),
+            Tap(onTap: () => setState(() => more = !more), child: Padding(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8), child: Row(children: [Icon(Icons.more_horiz_rounded, size: 24, color: ink(context)), const SizedBox(width: 16), Expanded(child: Text(s.t('more'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))), AnimatedRotation(turns: more ? .5 : 0, duration: const Duration(milliseconds: 200), child: Icon(Icons.expand_more_rounded, size: 24, color: sub(context)))]))),
+            AnimatedSize(duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic, alignment: Alignment.topCenter, child: more ? Padding(padding: const EdgeInsets.only(left: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              item(Icons.info_outline_rounded, 'about', () => TextPage(s.t('about'), s.t('about_t'), slug: 'about')),
+              item(Icons.rule_rounded, 'policy', () => TextPage(s.t('policy'), s.t('policy_t'), slug: 'policy')),
+              item(Icons.lock_outline_rounded, 'privacy', () => TextPage(s.t('privacy'), s.t('privacy_t'), slug: 'privacy')),
+              if (!kIsWeb) Tap(onTap: () { close(); launchUrl(Uri.parse('https://hulhup.my.id'), mode: LaunchMode.externalApplication); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8), child: Row(children: [Icon(Icons.language_rounded, size: 24, color: ink(context)), const SizedBox(width: 16), Text(s.t('website'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))]))),
+              if (!kIsWeb) Tap(onTap: () { close(); () async { final up = await s.checkUpdate(force: true); if (up) { showUpdate(context); } else { toast(s.t('upd_none')); } }(); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8), child: Row(children: [Icon(Icons.system_update_rounded, size: 24, color: ink(context)), const SizedBox(width: 16), Text(s.t('upd_menu'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600))]))),
+              if (kIsWeb) item(Icons.android_rounded, 'get_app', () => const GetAppPage()),
+            ])) : const SizedBox(width: double.infinity)),
+            const Spacer(),
+            if (s.me == null) PBtn(s.t('login'), () { close(); go(context, const AuthPage()); }, icon: Icons.login_rounded)
+            else PBtn(s.t('logout'), () async { close(); await s.logout(); }, icon: Icons.logout_rounded, ghost: true, fgc: heart),
+            const SizedBox(height: 14),
+            Center(child: Text(kBuild > 0 ? 'Misyi · v1.3.0 ($kBuild)' : 'Misyi · v1.3.0', style: TextStyle(color: sub(context), fontWeight: FontWeight.w700, letterSpacing: 1.2, fontSize: 12))),
+          ])))),
+        ),
+      ),
+    ]);
+  }
+}
+
+class PopupBody extends StatelessWidget {
+  final A a;
+  const PopupBody(this.a, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      if (a.pprof) Tap(onTap: () { Navigator.pop(context); go(context, ProfilePage(a.owner)); }, child: Row(children: [
+        Avatar(a.ownerAvatar, a.ownerName, 46),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Flexible(child: Text(a.ownerName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))), if (a.ownerVerified) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.verified_rounded, size: 16, color: Color(0xFF2F8F5B)))]), Text(a.created > 0 ? '${a.owner} · ${s.when(a.created)}' : a.owner, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: sub(context), fontSize: 13))])),
+        Icon(Icons.chevron_right_rounded, color: sub(context)),
+      ])),
+      if (!a.pprof && a.created > 0) Align(alignment: Alignment.centerLeft, child: Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(s.when(a.created), style: TextStyle(color: sub(context), fontSize: 13)))),
+      if (a.desc.trim().isNotEmpty) Tap(onTap: () { Navigator.pop(context); openPost(context, a); }, scale: .99, child: Padding(padding: EdgeInsets.only(top: a.pprof ? 12 : 0), child: Align(alignment: Alignment.centerLeft, child: Text.rich(TextSpan(children: [TextSpan(text: a.desc.trim()), if (a.long) TextSpan(text: ' …  ${s.t('read_more')}', style: TextStyle(color: acc(context), fontWeight: FontWeight.w700))]), maxLines: 6, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, height: 1.4))))),
+      SizedBox(height: a.pprof || a.desc.trim().isNotEmpty ? 14 : 4),
+      if (a.url.isNotEmpty) Container(
+        padding: const EdgeInsets.fromLTRB(8, 8, 6, 8), decoration: BoxDecoration(color: soft(context), borderRadius: BorderRadius.circular(26)),
+        child: ListenableBuilder(listenable: s, builder: (_, __) {
+          final on = s.playing == a.id;
+          return Row(children: [
+            Tap(onTap: () => s.play(a).catchError((_) => toast(s.t('e_server'), bad: true)), child: AnimatedContainer(duration: const Duration(milliseconds: 250), width: 44, height: 44, decoration: BoxDecoration(color: on ? green : btnBg(context), shape: BoxShape.circle), child: AnimatedSwitcher(duration: const Duration(milliseconds: 200), child: Icon(on ? Icons.pause_rounded : Icons.play_arrow_rounded, key: ValueKey(on), color: on ? bgOf(context) : cream, size: 26)))),
+            Expanded(child: ValueListenableBuilder<int>(valueListenable: s.pos, builder: (_, ms, __) {
+              final total = (s.dur > 0 ? s.dur : a.secs * 1000).clamp(1, 1 << 30);
+              return Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: (ms / total).clamp(0.0, 1.0), minHeight: 6, backgroundColor: ink(context).withValues(alpha: .12), color: ink(context))));
+            })),
+            ValueListenableBuilder<int>(valueListenable: s.pos, builder: (_, ms, __) => Text('${mmss(ms ~/ 1000)} / ${mmss(a.secs)}', style: TextStyle(color: on ? ink(context) : sub(context), fontSize: 13, fontWeight: FontWeight.w700))),
+          ]);
+        }),
+      ),
+      if (a.url.isNotEmpty) ...[const SizedBox(height: 10), const SpeedRow()],
+      const SizedBox(height: 6),
+      PostActions(a, onComments: () { Navigator.pop(context); openPost(context, a); }),
+      if (a.url.isNotEmpty) ListenableBuilder(listenable: s, builder: (_, __) {
+        final off = s.isOffline(a.id);
+        return PBtn(off ? s.t('is_offline') : s.t('mk_offline'), () => toggleOffline(a), ghost: true, icon: off ? Icons.offline_pin_rounded : Icons.download_for_offline_outlined);
+      }),
+      if (s.me != null && s.me!.username != a.owner) Tap(onTap: () => reportSheet(context, audio: a.id), child: Padding(padding: const EdgeInsets.only(top: 12, bottom: 2), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.flag_outlined, size: 16, color: sub(context)), const SizedBox(width: 6), Text(s.t('report'), style: TextStyle(color: sub(context), fontSize: 13, fontWeight: FontWeight.w600))]))),
+    ]);
+  }
+}
+
+
+/// Pemilih kecepatan putar buatan sendiri (bukan bawaan hp/browser).
+class SpeedRow extends StatelessWidget {
+  const SpeedRow({super.key});
+  static const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  String _l(double r) => r == r.roundToDouble() ? '${r.toInt()}×' : '${r.toString().replaceAll(RegExp(r'0+$'), '')}×';
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    return ListenableBuilder(listenable: s, builder: (_, __) => Row(children: [
+      Icon(Icons.speed_rounded, size: 18, color: sub(context)),
+      const SizedBox(width: 8),
+      Expanded(child: Container(
+        padding: const EdgeInsets.all(3), decoration: BoxDecoration(color: soft(context), borderRadius: BorderRadius.circular(18)),
+        child: Row(children: [for (final r in rates) Expanded(child: Tap(onTap: () => s.setRate(r), scale: .94, child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200), height: 32, alignment: Alignment.center,
+          decoration: BoxDecoration(color: s.rate == r ? ink(context) : Colors.transparent, borderRadius: BorderRadius.circular(15)),
+          child: Text(_l(r), style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: s.rate == r ? bgOf(context) : sub(context))),
+        )))]),
+      )),
+    ]));
+  }
+}
+
+/// Pembaruan: tampilkan caranya (unduh ulang dari situs lalu pasang), tanpa unduhan tersembunyi di dalam aplikasi.
+Future<void> showUpdate(BuildContext context) => sheet(context, (_) => const _UpdateBody());
+
+class _UpdateBody extends StatelessWidget {
+  const _UpdateBody();
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    Widget step(int n, String k) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(width: 24, height: 24, alignment: Alignment.center, decoration: BoxDecoration(color: ink(context), shape: BoxShape.circle), child: Text('$n', style: TextStyle(color: bgOf(context), fontWeight: FontWeight.w800, fontSize: 12))),
+          const SizedBox(width: 12),
+          Expanded(child: Padding(padding: const EdgeInsets.only(top: 2), child: Text(s.t(k), style: const TextStyle(fontSize: 14, height: 1.35)))),
+        ]));
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Center(child: Icon(Icons.system_update_rounded, size: 40, color: ink(context))),
+      const SizedBox(height: 12),
+      Center(child: Text(s.t('upd_title'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
+      const SizedBox(height: 8),
+      Text(s.t('upd_note'), textAlign: TextAlign.center, style: TextStyle(color: sub(context), fontSize: 14, height: 1.4)),
+      const SizedBox(height: 18),
+      step(1, 'upd_s1'), step(2, 'upd_s2'), step(3, 'upd_s3'), step(4, 'upd_s4'),
+      Text(s.t('upd_fail'), style: TextStyle(color: sub(context), fontSize: 12.5, height: 1.4)),
+      const SizedBox(height: 16),
+      PBtn(s.t('upd_dl'), () => downloadApk(context, kApkUrl), icon: Icons.download_rounded),
+    ]);
+  }
+}
+
+/// Halaman unduh aplikasi Android di web, dengan tampilan sendiri.
+Future<void> showGetApp(BuildContext context) => go(context, const GetAppPage());
+
+class GetAppPage extends StatelessWidget {
+  const GetAppPage({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(body: Column(children: [
+        TopBar(back: true, title: Store.i.t('get_app')),
+        const Expanded(child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(24, 8, 24, 40), child: _GetAppBody())),
+      ]));
+}
+
+class _GetAppBody extends StatefulWidget {
+  const _GetAppBody();
+  @override
+  State<_GetAppBody> createState() => _GetAppState();
+}
+
+class _GetAppState extends State<_GetAppBody> {
+  String ver = '', size = '', size32 = '';
+  @override
+  void initState() { super.initState(); _info(); }
+  Future<void> _info() async {
+    try {
+      final r = await http.get(Uri.parse('https://hulhup.my.id/version.json')).timeout(const Duration(seconds: 8));
+      final j = jsonDecode(r.body) as Map;
+      ver = '${j['version'] ?? ''}';
+      String mb(dynamic v) { final n = int.tryParse('$v'); return n == null || n <= 0 ? '' : '${(n / 1000000).toStringAsFixed(1)} MB'; }
+      size = mb(j['size']);
+      size32 = mb(j['size32']);
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  Widget _step(int n, String t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(children: [
+        Container(width: 26, height: 26, alignment: Alignment.center, decoration: BoxDecoration(color: soft(context), shape: BoxShape.circle), child: Text('$n', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13))),
+        const SizedBox(width: 12),
+        Expanded(child: Text(t, style: const TextStyle(fontSize: 14.5, height: 1.4))),
+      ]));
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Center(child: Icon(Icons.android_rounded, size: 44, color: ink(context))),
+      const SizedBox(height: 10),
+      Center(child: Text(s.t('ga_title'), textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
+      const SizedBox(height: 8),
+      Text(s.t('ga_note'), textAlign: TextAlign.center, style: TextStyle(color: sub(context), fontSize: 14, height: 1.4)),
+      if (ver.isNotEmpty || size.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Center(child: Text([if (ver.isNotEmpty) '${s.t('ga_ver')} $ver', if (size.isNotEmpty) '${s.t('ga_size')} $size'].join(' · '), style: TextStyle(color: sub(context), fontWeight: FontWeight.w700, fontSize: 13)))),
+      const SizedBox(height: 18),
+      _step(1, s.t('ga_s1')), _step(2, s.t('ga_s2')), _step(3, s.t('ga_s3')), _step(4, s.t('ga_s4')), _step(5, s.t('ga_s5')),
+      const SizedBox(height: 8),
+      PBtn(s.t('ga_btn'), () => downloadApk(context, kApkUrl), icon: Icons.download_rounded),
+      if (size32.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Center(child: Tap(onTap: () => downloadApk(context, kApkUrl32), child: Padding(padding: const EdgeInsets.all(8), child: Text('${s.t('ga_32')} ($size32)', textAlign: TextAlign.center, style: TextStyle(color: sub(context), fontSize: 13, fontWeight: FontWeight.w600, decoration: TextDecoration.underline)))))),
+      const SizedBox(height: 10),
+      Text(s.t('ga_tip'), style: TextStyle(color: sub(context), fontSize: 13, height: 1.4)),
+    ]);
+  }
+}
+
+
+/// Unduh APK di tampilan sendiri: progres, status, dan ulangi jika gagal.
+Future<void> downloadApk(BuildContext context, String url) => sheet(context, (_) => _ApkDl(url));
+
+class _ApkDl extends StatefulWidget {
+  final String url;
+  const _ApkDl(this.url);
+  @override
+  State<_ApkDl> createState() => _ApkDlState();
+}
+
+class _ApkDlState extends State<_ApkDl> {
+  double p = 0;
+  bool done = false, failed = false;
+  @override
+  void initState() { super.initState(); _go(); }
+  Future<void> _go() async {
+    setState(() { p = 0; done = false; failed = false; });
+    try {
+      await fetchApk(widget.url, (v) { if (mounted) setState(() => p = v); });
+      if (mounted) setState(() => done = true);
+    } catch (_) { if (mounted) setState(() => failed = true); }
+  }
+  @override
+  Widget build(BuildContext context) {
+    final s = Store.i;
+    final msg = failed ? s.t('upd_fail') : done ? (kIsWeb ? s.t('apk_done_web') : s.t('upd_inst')) : '${s.t('apk_pct')} ${(p * 100).round()}%';
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Center(child: Icon(failed ? Icons.error_outline_rounded : done ? Icons.check_circle_rounded : Icons.download_rounded, size: 40, color: failed ? heart : ink(context))),
+      const SizedBox(height: 12),
+      Center(child: Text(s.t('ga_title'), textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18))),
+      const SizedBox(height: 16),
+      ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: failed ? 0 : (done ? 1 : (p > 0 ? p : null)), minHeight: 8, color: green, backgroundColor: soft(context))),
+      const SizedBox(height: 12),
+      Center(child: Text(msg, textAlign: TextAlign.center, style: TextStyle(color: failed ? heart : sub(context), fontSize: 14, height: 1.4))),
+      const SizedBox(height: 16),
+      if (failed) PBtn(s.t('retry'), _go, icon: Icons.refresh_rounded) else if (done) PBtn(s.t('done'), () => Navigator.pop(context), ghost: true),
+    ]);
+  }
+}

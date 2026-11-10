@@ -21,8 +21,6 @@ jobs:
       url: ${{ steps.dep.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with: { repository: MISYI-qh/hulhup-new-nih, path: app }
       - uses: subosito/flutter-action@v2
         with: { channel: stable }
       - name: Siapkan proyek Flutter

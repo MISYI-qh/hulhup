@@ -1,0 +1,1237 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+import 'dart:typed_data';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'push.dart';
+import 'files_web.dart' if (dart.library.io) 'files_io.dart';
+import 'notify.dart';
+
+const kBuild = int.fromEnvironment('BUILD');
+const kApkUrl64 = 'https://hulhup.my.id/hulhup.apk', kApkUrl32 = 'https://hulhup.my.id/hulhup-32.apk';
+/// Berkas APK yang cocok dengan HP ini (64-bit untuk hampir semua HP; 32-bit untuk HP lama).
+String get kApkUrl { final a = abiName(); return (a.contains('android_arm') && !a.contains('arm64')) ? kApkUrl32 : kApkUrl64; }
+
+class ApiErr implements Exception {
+  final String code;
+  ApiErr(this.code);
+}
+
+/// Lapisan data. Dengan --dart-define=API_URL=... memakai server (Remote); tanpa itu memakai Local (tes & mode lokal).
+class Api {
+  static const base = String.fromEnvironment('API_URL');
+  static bool get remote => base.isNotEmpty;
+  static String? token;
+  static final _media = <String, Uint8List>{};
+
+  static Future<void> init(SharedPreferences sp) async { token = sp.getString('token'); }
+  static bool get hasSession => remote ? token != null : Local.session != null;
+  static Future<void> setSession(String? v) async {
+    if (remote) {
+      token = v;
+      final sp = await SharedPreferences.getInstance();
+      v == null ? await sp.remove('token') : await sp.setString('token', v);
+    } else { await Local.setSession(v); }
+  }
+
+  /// Kata sandi: spasi di ujung diabaikan, spasi di tengah tidak boleh.
+  static Map? _pw(String p, Map? b) {
+    if (b == null || !(p == '/register' || p == '/login' || p == '/me/password')) return b;
+    final o = {...b};
+    for (final k in ['password', 'old', 'new']) {
+      if (o[k] is String) o[k] = (o[k] as String).trim();
+    }
+    final fresh = p == '/register' ? o['password'] : (p == '/me/password' ? o['new'] : null);
+    if (fresh is String && RegExp(r'\s').hasMatch(fresh)) throw ApiErr('bad_password');
+    return o;
+  }
+
+  static Future<dynamic> req(String m, String p, {Map? body}) async {
+    body = _pw(p, body);
+    return remote ? Remote.req(m, p, body) : Local.handle(m, p, body);
+  }
+  static Future<dynamic> raw(String p, Uint8List b, String type) => remote ? Remote.send('POST', p, b, type) : Local.raw(p, b, type);
+  static Future<dynamic> multi(String p, Uint8List b, String name, Map<String, String> f) =>
+      remote ? Remote.send('POST', '$p?${Uri(queryParameters: f).query}', b, 'application/octet-stream') : Local.multi(p, b, name, f);
+
+  /// Ambil berkas audio (perlu login) dari server; disimpan sebentar di memori.
+  static Future<Uint8List?> bytes(String url) async {
+    if (url.startsWith('file:')) return readOffline(url.substring(5));
+    final l = Local.bytes(url);
+    if (l != null || !remote || !url.startsWith('/')) return l;
+    final c = _media[url];
+    if (c != null) return c;
+    final r = await Remote.fetch(url);
+    if (_media.length >= 6) _media.remove(_media.keys.first);
+    _media[url] = r;
+    return r;
+  }
+}
+
+class Remote {
+  static final _c = http.Client();
+
+  static Map<String, String> _h([String? type]) {
+    final n = DateTime.now();
+    String d2(int v) => v.toString().padLeft(2, '0');
+    return {
+      if (Api.token != null) 'Authorization': 'Bearer ${Api.token}',
+      'X-Today': '${n.year}-${d2(n.month)}-${d2(n.day)}',
+      if (type != null) 'Content-Type': type,
+      if (!kIsWeb) 'X-Device': 'Hulhup app - ${defaultTargetPlatform == TargetPlatform.iOS ? 'iOS' : 'Android'}',
+    };
+  }
+
+  static dynamic _out(http.Response r) {
+    dynamic j;
+    try { j = r.body.isEmpty ? {} : jsonDecode(utf8.decode(r.bodyBytes)); } catch (_) { j = null; }
+    if (r.statusCode >= 200 && r.statusCode < 300) return j ?? {};
+    final code = j is Map && j['error'] is String ? j['error'] as String : (r.statusCode == 401 ? 'unauthorized' : 'server');
+    throw ApiErr(code);
+  }
+
+  static Future<dynamic> req(String m, String p, Map? body) async {
+    if (p == '/me/reminders' && body?['test'] != true) {
+      final n = DateTime.now();
+      var slot = DateTime(n.year, n.month, n.day, 19);
+      if (n.isBefore(slot)) slot = slot.subtract(const Duration(days: 1));
+      String d2(int v) => v.toString().padLeft(2, '0');
+      body = {...?body, 'slot': '${slot.year}-${d2(slot.month)}-${d2(slot.day)}', 'slot_ms': slot.millisecondsSinceEpoch};
+    }
+    if (p == '/register') body = {...?body, 'slot': ''};
+    final u = Uri.parse('${Api.base}$p');
+    final h = _h(body == null ? null : 'application/json');
+    final enc = body == null ? null : jsonEncode(body);
+    final t = const Duration(seconds: 25);
+    final r = switch (m) {
+      'GET' => await _c.get(u, headers: h).timeout(t),
+      'POST' => await _c.post(u, headers: h, body: enc).timeout(t),
+      'PATCH' => await _c.patch(u, headers: h, body: enc).timeout(t),
+      'DELETE' => await _c.delete(u, headers: h).timeout(t),
+      _ => throw ApiErr('not_found'),
+    };
+    final j = _out(r);
+    if ((p == '/login' || p == '/register') && j is Map && j['token'] is String) await Api.setSession(j['token'] as String);
+    if ((p == '/logout' && m == 'POST') || (p == '/me' && m == 'DELETE')) await Api.setSession(null);
+    return j;
+  }
+
+  static Future<dynamic> send(String m, String p, Uint8List b, String type) async {
+    final r = await _c.post(Uri.parse('${Api.base}$p'), headers: _h(type), body: b).timeout(const Duration(seconds: 60));
+    return _out(r);
+  }
+
+  static Future<Uint8List> fetch(String p) async {
+    final r = await _c.get(Uri.parse('${Api.base}$p'), headers: _h()).timeout(const Duration(seconds: 60));
+    if (r.statusCode != 200) throw ApiErr('network');
+    return r.bodyBytes;
+  }
+}
+
+String? mimeOf(Uint8List b) {
+  if (b.length < 12) return null;
+  String s(int a, int n) => String.fromCharCodes(b.sublist(a, a + n));
+  if (s(0, 4) == 'RIFF') return 'audio/wav';
+  if (s(4, 4) == 'ftyp') return 'audio/mp4';
+  if (s(0, 4) == 'OggS') return 'audio/ogg';
+  if (s(0, 4) == 'fLaC') return 'audio/flac';
+  if (s(0, 3) == 'ID3' || (b[0] == 0xFF && (b[1] & 0xE0) == 0xE0)) return 'audio/mpeg';
+  if (b[0] == 0x1A && b[1] == 0x45) return 'audio/webm';
+  return null;
+}
+
+class Local {
+  static late SharedPreferences sp;
+  static Map<String, dynamic> db = {};
+  static String? session;
+  static final _cache = <String, Uint8List>{};
+  static final _rnd = Random.secure();
+  static const _ext = ['m4a', 'mp4', 'aac', 'mp3', 'wav', 'ogg', 'opus', 'webm', 'flac'];
+
+  static Future<void> init(SharedPreferences p) async {
+    sp = p;
+    final s = sp.getString('db');
+    db = s == null ? {'seq': 0, 'users': [], 'audios': [], 'likes': [], 'follows': [], 'notifs': [], 'rels': [], 'taps': 0} : jsonDecode(s) as Map<String, dynamic>;
+    db.putIfAbsent('rels', () => []);
+    session = sp.getString('session');
+    for (final a in _r('audios')) {
+      a['vis'] = const {'all': 'public', 'me': 'followers'}[a['vis']] ?? a['vis'];
+      a['rand'] ??= 'public';
+      a['pprof'] ??= true;
+      a['to'] ??= [];
+    }
+    for (final u in _r('users')) {
+      u['pvis'] ??= 'public';
+      u['taps'] ??= 0;
+      if (u['log'] == null) {
+        // Riwayat hari masuk lama tidak tercatat; isi dari rangkaian terakhir.
+        final l = DateTime.tryParse(u['last'] ?? '');
+        final st = (u['streak'] ?? 0) as int;
+        u['log'] = l == null ? [] : [for (var i = st - 1; i >= 0; i--) _iso(DateTime(l.year, l.month, l.day - i))];
+      }
+      if (u['birth'] == null) u['birth'] = _iso(DateTime(DateTime.now().year - ((u['age'] as int?) ?? 18), 1, 1));
+    }
+    await _save();
+  }
+
+  /// Jadwal pengingat 19.00 terakhir yang sudah lewat: (tanggal ISO, waktu dalam ms).
+  static (String, int) _slot() {
+    final n = DateTime.now(), d = n.hour >= 19 ? n : DateTime(n.year, n.month, n.day - 1);
+    return (_iso(d), DateTime(d.year, d.month, d.day, 19).millisecondsSinceEpoch);
+  }
+
+  static String _iso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Umur dihitung dari tanggal lahir setiap kali dibutuhkan, jadi selalu mengikuti hari ini.
+  static int ageOf(String iso) {
+    final b = DateTime.tryParse(iso);
+    if (b == null) return 0;
+    final n = DateTime.now();
+    var a = n.year - b.year;
+    if (n.month < b.month || (n.month == b.month && n.day < b.day)) a--;
+    return a;
+  }
+
+  static bool _okBirth(String iso) {
+    final b = DateTime.tryParse(iso);
+    return b != null && !b.isAfter(DateTime.now()) && ageOf(iso) <= 120;
+  }
+
+  /// Apakah [viewer] termasuk audiens [mode] milik [owner]. pengikut = viewer mengikuti owner; mengikuti = owner mengikuti viewer.
+  static bool _aud(dynamic mode, Map owner, Map? viewer, {bool self = true}) {
+    if (mode == 'public') return true;
+    if (viewer == null) return false;
+    if (viewer['id'] == owner['id']) return self;
+    if (mode == 'me') return false;
+    switch (mode) {
+      case 'friend':
+      case 'best':
+      case 'partner':
+      case 'family':
+        return _relType(viewer['id'], owner['id']) == mode;
+      case 'relations':
+        return _relType(viewer['id'], owner['id']) != null;
+    }
+    final fol = _r('follows').any((f) => f['from'] == viewer['id'] && f['to'] == owner['id']);
+    final ing = _r('follows').any((f) => f['from'] == owner['id'] && f['to'] == viewer['id']);
+    switch (mode) {
+      case 'followers': return fol;
+      case 'following': return ing;
+      case 'both': return fol || ing;
+      default: return false;
+    }
+  }
+
+  /// Hubungan dua pihak (teman, sahabat, pasangan, keluarga). Satu pasangan akun hanya punya satu baris.
+  static Map? _rel(int a, int b) {
+    for (final r in _r('rels')) {
+      if ((r['a'] == a && r['b'] == b) || (r['a'] == b && r['b'] == a)) return r;
+    }
+    return null;
+  }
+
+  static String? _relType(int a, int b) {
+    final r = _rel(a, b);
+    return r != null && r['status'] == 'active' ? r['type'] as String : null;
+  }
+
+  /// Audiens satu audio. 'accounts' = hanya akun yang dipilih pengunggah.
+  static bool _audA(Map a, Map? viewer, {bool self = true}) {
+    final o = _byId(a['owner'])!;
+    final m = a['rand'] ?? 'public';
+    if (m == 'accounts') {
+      if (viewer == null) return false;
+      if (viewer['id'] == o['id']) return self;
+      return ((a['to'] as List?) ?? []).contains(viewer['id']);
+    }
+    return _aud(m, o, viewer, self: self);
+  }
+
+  static const filters = ['public', 'followers', 'following', 'both', 'friend', 'best', 'partner', 'family', 'relations', 'me'];
+  static const relTypes = ['friend', 'best', 'partner', 'family'];
+
+  static Future<void> _save() => sp.setString('db', jsonEncode(db));
+  static Future<void> setSession(String? v) async { session = v; v == null ? await sp.remove('session') : await sp.setString('session', v); }
+
+  static Future<void> _put(String k, Uint8List b) async {
+    try {
+      if (!await sp.setString('m_$k', base64Encode(b))) throw ApiErr('storage_full');
+      _cache[k] = b;
+    } on ApiErr {
+      rethrow;
+    } catch (_) {
+      throw ApiErr('storage_full');
+    }
+  }
+  static Future<void> _del(String k) async { _cache.remove(k); await sp.remove('m_$k'); }
+  static Uint8List? _blob(String k) {
+    final c = _cache[k];
+    if (c != null) return c;
+    final s = sp.getString('m_$k');
+    return s == null ? null : _cache[k] = base64Decode(s);
+  }
+  static Future<void> putBlob(String k, Uint8List b) => _put(k, b);
+  static Future<void> delBlob(String k) => _del(k);
+  static int? _lastRand;
+  static Uint8List? bytes(String url) => url.startsWith('mem:') ? _blob(url.substring(4)) : null;
+
+  static List _r(String k) => db[k] as List;
+  static Map? _byName(String n) { for (final u in _r('users')) { if (u['username'] == n) return u; } return null; }
+  static Map? _byId(int id) { for (final u in _r('users')) { if (u['id'] == id) return u; } return null; }
+  static int _next() { final i = (db['seq'] as int) + 1; db['seq'] = i; return i; }
+  static int _now() => DateTime.now().millisecondsSinceEpoch;
+  static String _salt() => List.generate(16, (_) => _rnd.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  static String _hash(String salt, String pw) => sha256.convert(utf8.encode('$salt:$pw')).toString();
+  static int _cnt(String k, bool Function(dynamic) f) => _r(k).where(f).length;
+  static String? _img(Map u, String kind) => u[kind == 'avatar' ? 'av' : 'cv'] == true ? 'mem:u${u['id']}_$kind' : null;
+
+  /// Rangkaian hari masuk yang masih berlaku (hari ini atau kemarin), selain itu 0.
+  static int _streakOf(Map u) {
+    final l = u['last'] as String?;
+    if (l == null) return 0;
+    final d = DateTime.now();
+    return (l == _iso(d) || l == _iso(DateTime(d.year, d.month, d.day - 1))) ? ((u['streak'] ?? 0) as int) : 0;
+  }
+
+  static Map _uv(Map u, Map? me) {
+    final id = u['id'] as int, mine = me != null && me['id'] == id;
+    return {
+      'username': u['username'], 'name': u['name'], 'bio': u['bio'], 'age': mine ? ageOf(u['birth']) : 0, 'birth': mine ? u['birth'] : '',
+      'avatar': _img(u, 'avatar'), 'cover': _img(u, 'cover'),
+      'taps': mine ? (u['taps'] ?? 0) : 0, 'pvis': mine ? (u['pvis'] ?? 'public') : '', 'streak': _streakOf(u), 'days': mine ? (u['days'] ?? 0) : 0,
+      'followers': _cnt('follows', (f) => f['to'] == id), 'following': _cnt('follows', (f) => f['from'] == id),
+      'audios': _cnt('audios', (a) => a['owner'] == id),
+      'is_following': me != null && !mine && _r('follows').any((f) => f['from'] == me['id'] && f['to'] == id), 'is_me': mine,
+    };
+  }
+
+  static Map _av(Map a, Map? me) {
+    final o = _byId(a['owner'])!, id = a['id'];
+    return {
+      'id': id, 'desc': a['desc'], 'secs': a['secs'], 'popup': true, 'vis': a['vis'], 'url': 'mem:a$id', 'pprof': a['pprof'] != false, 'rand': a['rand'] ?? 'public', 'created': a['created'] ?? 0,
+      'likes': _cnt('likes', (l) => l['a'] == id), 'liked': me != null && _r('likes').any((l) => l['a'] == id && l['u'] == me['id']),
+      'owner': o['username'], 'owner_name': o['name'], 'owner_avatar': _img(o, 'avatar'),
+    };
+  }
+
+  static List _mini(Iterable us) => us.map((u) => {'username': u['username'], 'name': u['name'], 'avatar': _img(u, 'avatar')}).toList();
+
+  /// Dipanggil saat notifikasi suka/ikuti baru dibuat (untuk menampilkan notifikasi HP): (username penerima, jenis, nama pelaku).
+  static void Function(String to, String type, String actor, String extra)? onNotify;
+
+  static void _notify(int to, String type, int actor, int? audio, {String extra = ''}) {
+    if (to == actor) return;
+    if (_r('notifs').any((n) => n['to'] == to && n['type'] == type && n['actor'] == actor && n['audio'] == audio && (n['extra'] ?? '') == extra)) return;
+    _r('notifs').add({'to': to, 'type': type, 'actor': actor, 'audio': audio, 'extra': extra, 'created': _now(), 'seen': false});
+    final a = _byId(actor), r = _byId(to);
+    if (a != null && r != null) onNotify?.call('${r['username']}', type, '${a['name']}', extra);
+  }
+
+  static void _sys(int to, String type, int n) {
+    _r('notifs').add({'to': to, 'type': type, 'actor': null, 'audio': null, 'n': n, 'created': _now(), 'seen': false});
+  }
+
+  static Future<dynamic> handle(String m, String path, Map? b) async {
+    final uri = Uri.parse(path), p = uri.path, q = uri.queryParameters;
+    final me = session == null ? null : _byName(session!);
+    Map need() { if (me == null) throw ApiErr('unauthorized'); return me; }
+    RegExpMatch? x;
+    final un = RegExp(r'^[a-z0-9_]{3,20}$');
+
+    if (p == '/register' && m == 'POST') {
+      final name = '${b!['name'] ?? ''}'.trim(), u = '${b['username'] ?? ''}'.trim().toLowerCase(), pw = '${b['password'] ?? ''}', birth = '${b['birth'] ?? ''}'.trim();
+      if (name.isEmpty || name.length > 40) throw ApiErr('bad_name');
+      if (!un.hasMatch(u)) throw ApiErr('bad_username');
+      if (pw.length < 6 || pw.length > 100) throw ApiErr('bad_password');
+      if (!_okBirth(birth)) throw ApiErr('bad_age');
+      if (_byName(u) != null) throw ApiErr('username_taken');
+      final salt = _salt();
+      final row = {'id': _next(), 'username': u, 'name': name, 'bio': '', 'birth': birth, 'salt': salt, 'pass': _hash(salt, pw), 'av': false, 'cv': false, 'created': _now(), 'pvis': 'public', 'taps': 0, 'log': [], 'rem': _slot().$1};
+      _r('users').add(row);
+      await _save();
+      await setSession(u);
+      return {'token': 'local', 'user': _uv(row, row)};
+    }
+    if (p == '/login' && m == 'POST') {
+      final row = _byName('${b!['username'] ?? ''}'.trim().toLowerCase());
+      if (row == null || _hash(row['salt'], '${b['password'] ?? ''}') != row['pass']) throw ApiErr('bad_credentials');
+      await setSession(row['username']);
+      return {'token': 'local', 'user': _uv(row, row)};
+    }
+    if (p == '/logout') { await setSession(null); return {'ok': true}; }
+    if (p == '/reports' || p == '/me/logout-others') { need(); return {'ok': true, 'closed': 0}; }
+    if (p == '/stats') return {'taps': me != null ? (me['taps'] ?? 0) : db['taps']};
+    if (p == '/random') {
+      // Hitungan ketukan per akun; tamu punya hitungan sendiri.
+      final taps = me != null ? ((me['taps'] ?? 0) as int) + 1 : (db['taps'] as int) + 1;
+      if (me != null) { me['taps'] = taps; } else { db['taps'] = taps; }
+      await _save();
+      final f = filters.contains(q['f']) ? q['f']! : 'public';
+      final want = f == 'me' ? 'accounts' : f;
+      final all = _r('audios').where((a) => (a['rand'] ?? 'public') == want && (_audA(a, me, self: false) || (want == 'public' && me != null && a['owner'] == me['id']))).toList();
+      // Acak sungguhan (Random.secure), hanya tidak mengulang audio yang sama dua kali berturut-turut bila ada pilihan lain.
+      var pool = all;
+      if (pool.length > 1 && _lastRand != null) pool = pool.where((a) => a['id'] != _lastRand).toList();
+      final pick = pool.isEmpty ? null : pool[_rnd.nextInt(pool.length)];
+      _lastRand = pick?['id'];
+      return {'taps': taps, 'audio': pick == null ? null : _av(pick, me)};
+    }
+    if (p == '/search') {
+      final s = (q['q'] ?? '').trim().toLowerCase();
+      if (s.isEmpty) return {'users': [], 'audios': []};
+      final au = _r('audios').where((a) {
+        final o = _byId(a['owner']);
+        return o != null && '${a['desc']}'.toLowerCase().contains(s) && _aud(o['pvis'] ?? 'public', o, me);
+      }).take(30).map((a) => _av(a, me)).toList();
+      return {'users': _mini(_r('users').where((u) => u['username'].startsWith(s) || u['name'].toLowerCase().contains(s)).take(30)), 'audios': au};
+    }
+    if (p == '/me' && m == 'GET') {
+      final u = need();
+      return {'user': _uv(u, u), 'unread': _cnt('notifs', (n) => n['to'] == u['id'] && n['seen'] == false), 'unread_social': _cnt('notifs', (n) => n['to'] == u['id'] && n['seen'] == false && (n['type'] == 'like' || n['type'] == 'follow' || n['type'] == 'rel_req' || n['type'] == 'rel_ok'))};
+    }
+    if (p == '/me/settings' && m == 'PATCH') {
+      final u = need();
+      final v = b!['pvis'];
+      if (!filters.contains(v)) throw ApiErr('bad_file');
+      u['pvis'] = v;
+      await _save();
+      return {'user': _uv(u, u)};
+    }
+    if (p == '/me/checkin' && m == 'POST') {
+      final u = need(), now = DateTime.now(), today = _iso(now), last = u['last'] as String?;
+      var isNew = false;
+      if (last != today) {
+        isNew = true;
+        var missed = 0;
+        if (last != null && last == _iso(DateTime(now.year, now.month, now.day - 1))) {
+          u['streak'] = ((u['streak'] ?? 0) as int) + 1;
+        } else {
+          if (last != null) missed = max(0, DateTime.parse(today).difference(DateTime.parse(last)).inDays - 1);
+          u['streak'] = 1;
+        }
+        u['days'] = ((u['days'] ?? 0) as int) + 1;
+        u['last'] = today;
+        final lg = (u['log'] as List?) ?? (u['log'] = []);
+        if (!lg.contains(today)) lg.add(today);
+        if (lg.length > 800) lg.removeRange(0, lg.length - 800);
+        if (missed > 0) _sys(u['id'], 'missed', missed);
+        _sys(u['id'], 'streak', u['streak']);
+        await _save();
+      }
+      return {'streak': _streakOf(u), 'days': u['days'] ?? 0, 'new': isNew};
+    }
+    if (p == '/me/log' && m == 'GET') {
+      final u = need();
+      final lg = List<String>.from((u['log'] as List?) ?? [])..sort();
+      return {'days': lg, 'streak': _streakOf(u), 'total': u['days'] ?? 0};
+    }
+    if (p == '/me/reminders' && m == 'POST') {
+      // Catat notifikasi "Kamu lelah?" jam 19.00 yang sudah lewat ke daftar notifikasi di aplikasi.
+      final u = need(), slot = _slot();
+      if (b?['test'] == true) {
+        _r('notifs').add({'to': u['id'], 'type': 'tired', 'actor': null, 'audio': null, 'n': 0, 'created': _now(), 'seen': false});
+        await _save();
+        return {'ok': true, 'added': true};
+      }
+      final fresh = u['rem'] != null && u['rem'] != slot.$1 && b?['on'] != false;
+      if (fresh) _r('notifs').add({'to': u['id'], 'type': 'tired', 'actor': null, 'audio': null, 'n': 0, 'created': slot.$2, 'seen': false});
+      u['rem'] = slot.$1;
+      await _save();
+      return {'ok': true, 'added': fresh};
+    }
+    x = RegExp(r'^/me/followers/([a-z0-9_]+)$').firstMatch(p);
+    if (x != null && m == 'DELETE') {
+      // Batalkan orang yang mengikuti kita (dia tidak diberi tahu).
+      final u = need(), f = _byName(x[1]!);
+      if (f == null) throw ApiErr('not_found');
+      _r('follows').removeWhere((r) => r['from'] == f['id'] && r['to'] == u['id']);
+      _r('notifs').removeWhere((n) => n['type'] == 'follow' && n['actor'] == f['id'] && n['to'] == u['id']);
+      await _save();
+      return {'followers': _cnt('follows', (r) => r['to'] == u['id'])};
+    }
+    if (p == '/me' && m == 'PATCH') {
+      final u = need();
+      final name = b!.containsKey('name') ? '${b['name']}'.trim() : u['name'] as String;
+      final bio = b.containsKey('bio') ? '${b['bio']}'.trim() : u['bio'] as String;
+      final nu = b.containsKey('username') ? '${b['username']}'.trim().toLowerCase() : u['username'] as String;
+      final birth = b.containsKey('birth') ? '${b['birth']}'.trim() : u['birth'] as String;
+      if (name.isEmpty || name.length > 40) throw ApiErr('bad_name');
+      if (bio.length > 300) throw ApiErr('bad_bio');
+      if (!un.hasMatch(nu)) throw ApiErr('bad_username');
+      if (!_okBirth(birth)) throw ApiErr('bad_age');
+      if (nu != u['username'] && _byName(nu) != null) throw ApiErr('username_taken');
+      u['name'] = name; u['bio'] = bio; u['username'] = nu; u['birth'] = birth;
+      await _save();
+      await setSession(nu);
+      return {'user': _uv(u, u)};
+    }
+    x = RegExp(r'^/me/(avatar|cover)$').firstMatch(p);
+    if (x != null && m == 'DELETE') {
+      final u = need();
+      await _del('u${u['id']}_${x[1]}');
+      u[x[1] == 'avatar' ? 'av' : 'cv'] = false;
+      await _save();
+      return {'user': _uv(u, u)};
+    }
+    if (p == '/me/password' && m == 'POST') {
+      final u = need();
+      if (_hash(u['salt'], '${b!['old'] ?? ''}') != u['pass']) throw ApiErr('bad_credentials');
+      final pw = '${b['new'] ?? ''}';
+      if (pw.length < 6 || pw.length > 100) throw ApiErr('bad_password');
+      final salt = _salt();
+      u['salt'] = salt; u['pass'] = _hash(salt, pw);
+      await _save();
+      return {'ok': true};
+    }
+    if (p == '/me' && m == 'DELETE') {
+      final u = need(), id = u['id'];
+      for (final a in _r('audios').where((a) => a['owner'] == id).toList()) { await _del('a${a['id']}'); }
+      final mine = _r('audios').where((a) => a['owner'] == id).map((a) => a['id']).toSet();
+      _r('likes').removeWhere((l) => l['u'] == id || mine.contains(l['a']));
+      _r('notifs').removeWhere((n) => n['to'] == id || n['actor'] == id || mine.contains(n['audio']));
+      _r('audios').removeWhere((a) => a['owner'] == id);
+      _r('follows').removeWhere((f) => f['from'] == id || f['to'] == id);
+      _r('rels').removeWhere((r) => r['a'] == id || r['b'] == id);
+      for (final a in _r('audios')) { (a['to'] as List?)?.remove(id); }
+      await _del('u${id}_avatar'); await _del('u${id}_cover');
+      _r('users').removeWhere((r) => r['id'] == id);
+      await _save();
+      await setSession(null);
+      return {'ok': true};
+    }
+    if (p == '/me/liked') {
+      final u = need();
+      final ids = _r('likes').where((l) => l['u'] == u['id']).map((l) => l['a']).toSet();
+      return {'audios': _r('audios').where((a) => ids.contains(a['id'])).map((a) => _av(a, u)).toList()};
+    }
+    if (p == '/notifications') {
+      final u = need();
+      final rows = _r('notifs').where((n) => n['to'] == u['id']).toList().reversed.take(60).toList();
+      final items = rows.map((n) {
+        if (n['actor'] == null) return {'type': n['type'], 'created': n['created'], 'seen': n['seen'], 'n': n['n'], 'username': '', 'name': 'Hulhup', 'avatar': null, 'desc': ''};
+        final a = _byId(n['actor']);
+        if (a == null) return null;
+        String d = '';
+        for (final au in _r('audios')) { if (au['id'] == n['audio']) d = au['desc']; }
+        return {'type': n['type'], 'created': n['created'], 'seen': n['seen'], 'username': a['username'], 'name': a['name'], 'avatar': _img(a, 'avatar'), 'desc': d, 'extra': n['extra'] ?? ''};
+      }).whereType<Map>().toList();
+      for (final n in _r('notifs')) { if (n['to'] == u['id']) n['seen'] = true; }
+      await _save();
+      return {'items': items};
+    }
+    x = RegExp(r'^/audios/(\d+)$').firstMatch(p);
+    if (x != null && m == 'DELETE') {
+      final u = need(), id = int.parse(x[1]!);
+      final has = _r('audios').any((a) => a['id'] == id && a['owner'] == u['id']);
+      if (!has) throw ApiErr('not_found');
+      await _del('a$id');
+      _r('audios').removeWhere((a) => a['id'] == id);
+      _r('likes').removeWhere((l) => l['a'] == id);
+      _r('notifs').removeWhere((n) => n['audio'] == id);
+      await _save();
+      return {'ok': true};
+    }
+    x = RegExp(r'^/audios/(\d+)/like$').firstMatch(p);
+    if (x != null && m == 'POST') {
+      final u = need(), id = int.parse(x[1]!);
+      Map? a;
+      for (final r in _r('audios')) { if (r['id'] == id) a = r; }
+      if (a == null) throw ApiErr('not_found');
+      final had = _r('likes').any((l) => l['u'] == u['id'] && l['a'] == id);
+      if (had) { _r('likes').removeWhere((l) => l['u'] == u['id'] && l['a'] == id); }
+      else { _r('likes').add({'u': u['id'], 'a': id}); _notify(a['owner'], 'like', u['id'], id); }
+      await _save();
+      return {'liked': !had, 'likes': _cnt('likes', (l) => l['a'] == id)};
+    }
+    if (p == '/relations' && m == 'POST') {
+      final mu = need(), t = '${b!['type']}', o = _byName('${b['to']}'.toLowerCase());
+      if (!relTypes.contains(t)) throw ApiErr('bad_file');
+      if (o == null) throw ApiErr('not_found');
+      if (o['id'] == mu['id']) throw ApiErr('forbidden');
+      if (_rel(mu['id'], o['id']) != null) throw ApiErr('rel_exists');
+      _r('rels').add({'a': mu['id'], 'b': o['id'], 'type': t, 'status': 'pending', 'created': _now()});
+      _notify(o['id'], 'rel_req', mu['id'], null, extra: t);
+      await _save();
+      return {'ok': true};
+    }
+    if (p == '/me/relations' && m == 'GET') {
+      final u = need();
+      Map row(Map r) { final o = _byId(r['a'] == u['id'] ? r['b'] : r['a'])!; return {'username': o['username'], 'name': o['name'], 'avatar': _img(o, 'avatar'), 'type': r['type']}; }
+      final mine = _r('rels').where((r) => r['a'] == u['id'] || r['b'] == u['id']).toList();
+      return {
+        'active': mine.where((r) => r['status'] == 'active').map((r) => row(r)).toList(),
+        'incoming': mine.where((r) => r['status'] == 'pending' && r['b'] == u['id']).map((r) => row(r)).toList(),
+        'outgoing': mine.where((r) => r['status'] == 'pending' && r['a'] == u['id']).map((r) => row(r)).toList(),
+      };
+    }
+    x = RegExp(r'^/users/([a-z0-9_]+)/relations$').firstMatch(p);
+    if (x != null && m == 'GET') {
+      final o = _byName(x[1]!);
+      if (o == null) throw ApiErr('not_found');
+      final rows = _r('rels').where((r) => r['status'] == 'active' && (r['a'] == o['id'] || r['b'] == o['id'])).map((r) {
+        final f = _byId(r['a'] == o['id'] ? r['b'] : r['a'])!;
+        return {'username': f['username'], 'name': f['name'], 'avatar': _img(f, 'avatar'), 'type': r['type']};
+      }).toList();
+      return {'items': rows};
+    }
+    x = RegExp(r'^/relations/([a-z0-9_]+)(/accept|/decline)?$').firstMatch(p);
+    if (x != null) {
+      final mu = need(), o = _byName(x[1]!);
+      if (o == null) throw ApiErr('not_found');
+      final r = _rel(mu['id'], o['id']);
+      if (r == null) throw ApiErr('not_found');
+      if (x[2] == '/accept' && m == 'POST') {
+        if (r['status'] != 'pending' || r['b'] != mu['id']) throw ApiErr('forbidden');
+        r['status'] = 'active';
+        r['since'] = _now();
+        _r('notifs').removeWhere((n) => n['type'] == 'rel_req' && n['actor'] == o['id'] && n['to'] == mu['id']);
+        _notify(o['id'], 'rel_ok', mu['id'], null, extra: '${r['type']}');
+      } else if (x[2] == '/decline' && m == 'POST') {
+        if (r['status'] != 'pending' || r['b'] != mu['id']) throw ApiErr('forbidden');
+        _r('rels').remove(r);
+        _r('notifs').removeWhere((n) => n['type'] == 'rel_req' && n['actor'] == o['id'] && n['to'] == mu['id']);
+      } else if (x[2] == null && m == 'DELETE') {
+        // Batalkan permintaan / putus hubungan (tanpa notifikasi ke pihak lain).
+        _r('rels').remove(r);
+        _r('notifs').removeWhere((n) => (n['type'] == 'rel_req' || n['type'] == 'rel_ok') && ((n['actor'] == o['id'] && n['to'] == mu['id']) || (n['actor'] == mu['id'] && n['to'] == o['id'])));
+      } else {
+        throw ApiErr('not_found');
+      }
+      await _save();
+      return {'ok': true};
+    }
+    x = RegExp(r'^/users/([a-z0-9_]+)(/follow|/follows)?$').firstMatch(p);
+    if (x != null) {
+      final u = _byName(x[1]!);
+      if (u == null) throw ApiErr('not_found');
+      final id = u['id'] as int;
+      if (x[2] == null && m == 'GET') {
+        final mine = me != null && me['id'] == id;
+        final locked = !mine && !_aud(u['pvis'] ?? 'public', u, me);
+        final rows = locked ? [] : _r('audios').where((a) => a['owner'] == id).map((a) => _av(a, me)).toList();
+        Map rel = {'status': 'none', 'type': ''};
+        if (me != null && !mine) {
+          final r = _rel(me['id'], id);
+          if (r != null) rel = {'status': r['status'] == 'active' ? 'active' : (r['a'] == me['id'] ? 'out' : 'in'), 'type': r['type']};
+        }
+        return {'user': _uv(u, me), 'audios': rows, 'locked': locked, 'rel': rel};
+      }
+      if (x[2] == '/follow' && m == 'POST') {
+        final mu = need();
+        if (mu['id'] == id) throw ApiErr('forbidden');
+        final had = _r('follows').any((f) => f['from'] == mu['id'] && f['to'] == id);
+        if (had) { _r('follows').removeWhere((f) => f['from'] == mu['id'] && f['to'] == id); }
+        else { _r('follows').add({'from': mu['id'], 'to': id}); _notify(id, 'follow', mu['id'], null); }
+        await _save();
+        return {'following': !had, 'followers': _cnt('follows', (f) => f['to'] == id)};
+      }
+      if (x[2] == '/follows' && m == 'GET') {
+        final followers = q['kind'] != 'following';
+        final ids = _r('follows').where((f) => followers ? f['to'] == id : f['from'] == id).map((f) => followers ? f['from'] : f['to']).toSet();
+        return {'users': _mini(_r('users').where((r) => ids.contains(r['id'])))};
+      }
+    }
+    throw ApiErr('not_found');
+  }
+
+  static Future<dynamic> raw(String p, Uint8List b, String type) async {
+    final me = session == null ? null : _byName(session!);
+    if (me == null) throw ApiErr('unauthorized');
+    final x = RegExp(r'^/me/(avatar|cover)$').firstMatch(p);
+    if (x == null) throw ApiErr('not_found');
+    if (!RegExp(r'^image/(jpe?g|png|webp)$').hasMatch(type)) throw ApiErr('bad_file');
+    if (b.isEmpty) throw ApiErr('bad_file');
+    if (b.length > 3 * 1024 * 1024) throw ApiErr('too_big_img');
+    await _put('u${me['id']}_${x[1]}', b);
+    me[x[1] == 'avatar' ? 'av' : 'cv'] = true;
+    await _save();
+    return {'ok': true};
+  }
+
+  static Future<dynamic> multi(String p, Uint8List b, String name, Map<String, String> f) async {
+    final me = session == null ? null : _byName(session!);
+    if (me == null) throw ApiErr('unauthorized');
+    if (!_ext.contains(name.split('.').last.toLowerCase())) throw ApiErr('bad_file');
+    if (b.isEmpty || b.length > 1024 * 1024) throw ApiErr('too_big');
+    final ok = filters.where((e) => e != 'me').toList();
+    final vis = 'public', rnd = f['rand'] == 'accounts' ? 'accounts' : (ok.contains(f['rand']) ? f['rand']! : 'public');
+    final to = <int>[];
+    if (rnd == 'accounts') {
+      for (final n in (f['to'] ?? '').split(',')) {
+        final o = _byName(n.trim().toLowerCase());
+        if (o != null && o['id'] != me['id'] && !to.contains(o['id'])) to.add(o['id']);
+      }
+      if (to.isEmpty) throw ApiErr('need_accounts');
+    }
+    final id = _next();
+    await _put('a$id', b);
+    final secs = (int.tryParse(f['secs'] ?? '') ?? 15).clamp(1, 15);
+    var d = (f['desc'] ?? '').trim();
+    if (d.length > 200) d = d.substring(0, 200);
+    _r('audios').insert(0, {'id': id, 'owner': me['id'], 'desc': d, 'secs': secs, 'store': secs <= 20 ? 'mongo' : 'supabase', 'popup': true, 'pprof': f['pprof'] != '0', 'vis': vis, 'rand': rnd, 'to': to, 'created': _now()});
+    await _save();
+    return {'ok': true};
+  }
+}
+
+class U {
+  final String username, name, bio, birth, pvis, rvis;
+  final String? avatar, cover;
+  final int age, audios, streak, days, taps, rels; // rels -1 = disembunyikan pemiliknya
+  int followers, following;
+  bool isFollowing;
+  final bool isMe, verified;
+  U.from(Map j)
+      : username = j['username'], name = j['name'], bio = j['bio'] ?? '', birth = j['birth'] ?? '', avatar = j['avatar'], cover = j['cover'],
+        pvis = j['pvis'] ?? 'public', rvis = j['rvis'] ?? 'public', streak = j['streak'] ?? 0, days = j['days'] ?? 0, taps = j['taps'] ?? 0,
+        age = j['age'] ?? 0, rels = j['rels'] ?? 0, audios = j['audios'] ?? 0, followers = j['followers'] ?? 0, following = j['following'] ?? 0,
+        isFollowing = j['is_following'] == true, isMe = j['is_me'] == true, verified = j['verified'] == true;
+}
+
+class A {
+  final int id, secs, created;
+  int comments;
+  final String desc, url, vis, rand, owner, ownerName;
+  final List<String> to;
+  final String? ownerAvatar;
+  final bool popup, pprof, ownerVerified, long, inRand, inHups, bgm;
+  final int bgmIdx;
+  final String? text; // teks lengkap bila pendek; null = hanya ringkasan (buka halaman penuh)
+  final List<Map> files;
+  int likes;
+  bool liked, saved;
+  A.from(Map j)
+      : id = j['id'], secs = j['secs'] ?? 0, created = j['created'] ?? 0, desc = j['desc'] ?? '', url = j['url'] ?? '', vis = j['vis'] ?? 'public', rand = j['rand'] ?? 'public', owner = j['owner'],
+        ownerName = j['owner_name'], ownerAvatar = j['owner_avatar'], ownerVerified = j['owner_verified'] == true, popup = j['popup'] == true, pprof = j['pprof'] != false, likes = j['likes'] ?? 0, liked = j['liked'] == true,
+        long = j['long'] == true, inRand = j['in_rand'] != false, inHups = j['in_hups'] == true, comments = j['comments'] ?? 0, saved = j['saved'] == true, bgm = j['bgm'] == true, bgmIdx = (j['bgm_idx'] as num?)?.toInt() ?? 0, text = j['text'] as String?, to = ((j['to'] as List?) ?? const []).map((e) => '${e['username']}').toList(),
+        files = (j['files'] is List) ? [for (final f in j['files']) Map.from(f as Map)] : ((j['url'] ?? '') == '' ? <Map>[] : <Map>[{'url': j['url'], 'secs': j['secs'] ?? 0}]);
+  Map<String, dynamic> toJson() => {'id': id, 'secs': secs, 'created': created, 'desc': desc, 'url': url, 'vis': vis, 'rand': rand, 'owner': owner, 'owner_name': ownerName, 'owner_avatar': ownerAvatar, 'owner_verified': ownerVerified, 'popup': popup, 'pprof': pprof, 'likes': likes, 'liked': liked, 'long': long, 'in_rand': inRand, 'in_hups': inHups, 'comments': comments, 'saved': saved, 'files': files, 'bgm': bgm, 'text': text, 'to': [for (final u in to) {'username': u}]};
+}
+
+String mmss(int s) => '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+
+String fmt(int n) {
+  final s = '$n', b = StringBuffer(), sep = Store.i.lang == 'id' ? '.' : ',';
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) b.write(sep);
+    b.write(s[i]);
+  }
+  return b.toString();
+}
+
+class Store extends ChangeNotifier {
+  static final i = Store._();
+  Store._();
+  U? me;
+  int unread = 0, unreadSocial = 0;
+  Map<String, int> tapf = {};
+  int get taps => tapf[filter] ?? 0; // hitungan per filter
+  String lang = 'id';
+  ThemeMode mode = ThemeMode.system;
+  bool remind = true, fromOffline = false;
+  String filter = 'public';
+  void Function(String)? banner; // pemberitahuan di dalam aplikasi (diisi dari main)
+  final offline = <A>[];
+  final _rnd = Random.secure();
+  int? _lastOff;
+  int _nid = 0;
+  int? playing;
+  int dur = 0;
+  int _pushed = 0;
+  Object? _scope;
+  bool _starting = false;
+  final pos = ValueNotifier<int>(0);
+  final _p = AudioPlayer();
+  late SharedPreferences _sp;
+
+  String t(String k) => (S[k] ?? [k, k])[lang == 'id' ? 0 : 1];
+  String err(Object e) => e is ApiErr ? (S.containsKey('e_${e.code}') ? t('e_${e.code}') : t('e_server')) : t('e_network');
+
+  /// Waktu posting: "3 jam lalu" untuk 7 hari terakhir, selebihnya tanggal.
+  String when(int ms) {
+    if (ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    if (DateTime.now().difference(d).inDays < 7) return ago(ms);
+    const m = {
+      'id': ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
+      'en': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    };
+    return '${d.day} ${m[lang]![d.month - 1]} ${d.year}';
+  }
+
+  String ago(int ms) {
+    final m = (DateTime.now().millisecondsSinceEpoch - ms) ~/ 60000;
+    if (m < 1) return t('ago_now');
+    if (m < 60) return '$m ${t('ago_m')}';
+    final h = m ~/ 60;
+    return h < 24 ? '$h ${t('ago_h')}' : '${h ~/ 24} ${t('ago_d')}';
+  }
+
+  Future<void> init() async {
+    _sp = await SharedPreferences.getInstance();
+    if (Api.remote) { try { http.get(Uri.parse('${Api.base}/health?warm=1')).catchError((_) => http.Response('', 500)); } catch (_) {} }
+    lang = _sp.getString('lang') ?? 'id';
+    mode = ThemeMode.values[(_sp.getInt('mode') ?? 0).clamp(0, 2)];
+    remind = _sp.getBool('remind') ?? true;
+    filter = _sp.getString('filter') ?? 'public';
+    rate = (_sp.getDouble('rate') ?? 1.0).clamp(0.5, 2.0);
+    bgmMuted = _sp.getBool('bgm_muted') ?? false;
+    if (filter.split(',').any((e) => !Local.filters.contains(e))) filter = 'public';
+    await Local.init(_sp);
+    await Api.init(_sp);
+    if (Api.remote) Timer.periodic(const Duration(seconds: 30), (_) => _poll());
+    Local.onNotify = (to, type, actor, extra) {
+      if (me?.username == to) { banner?.call('$actor ${notifText(type, extra)}'); refresh(); }
+      Notifier.show(200 + (_nid++ % 50), 'Hulhup', '$actor ${notifText(type, extra)} · @$to', t('notif'));
+    };
+    try { for (final j in jsonDecode(_sp.getString('offline') ?? '[]') as List) { offline.add(A.from(j as Map)); } } catch (_) {}
+    _p.onPositionChanged.listen((d) => pos.value = d.inMilliseconds);
+    _p.onDurationChanged.listen((d) => dur = d.inMilliseconds);
+    _p.onPlayerComplete.listen((_) { playing = null; _scope = null; if (dur > 0) pos.value = dur; notifyListeners(); });
+  }
+
+  Future<void> refresh() async {
+    try {
+      if (Api.hasSession) {
+        final j = await Api.req('GET', '/me');
+        me = U.from(j['user']);
+        unread = j['unread'] ?? 0;
+        unreadSocial = j['unread_social'] ?? 0;
+        if (unreadSocial < _pushed) { _pushed = unreadSocial; _sp.setInt('pushed', _pushed); }
+      }
+      final st = await Api.req('GET', '/stats');
+      if (st['tapf'] is Map) tapf = {for (final e in (st['tapf'] as Map).entries) '${e.key}': (e.value as num).toInt()};
+    } on ApiErr catch (e) {
+      if (e.code == 'unauthorized') await _clear();
+    }
+    notifyListeners();
+  }
+
+  /// Dipanggil saat aplikasi dibuka / kembali ke depan: catat hari masuk, notifikasi, pengingat.
+  /// Mengembalikan jumlah hari berturut-turut bila ini masuk pertama hari ini.
+  Future<int?> start() async {
+    if (_starting) return null;
+    _starting = true;
+    int? fresh;
+    checkUpdate();
+    try {
+      await refresh();
+      if (me != null) {
+        final j = await Api.req('POST', '/me/checkin');
+        if (j['new'] == true) fresh = j['streak'] as int?;
+        await Api.req('POST', '/me/reminders', body: {'on': remind});
+        await refresh();
+        if (unreadSocial > _pushed) {
+          final msg = t('push_unread').replaceAll('{n}', '$unreadSocial');
+          banner?.call(msg);
+          await Notifier.show(1, 'Hulhup', msg, t('notif'));
+        }
+        _pushed = unreadSocial;
+        _sp.setInt('pushed', _pushed);
+        final viaFcm = await Push.register(lang);
+        Notifier.watch(!viaFcm);
+      }
+    } catch (_) {
+    } finally {
+      _starting = false;
+    }
+    try {
+      if (remind) {
+        if (!await Notifier.enabled()) await Notifier.allow();
+        await syncReminders();
+      } else {
+        await Notifier.cancelReminders();
+      }
+    } catch (_) {}
+    return fresh;
+  }
+
+  bool updateReady = false;
+  DateTime? _updChecked;
+
+  /// Cek versi terbaru di hulhup.my.id (version.json); bila build-nya lebih baru, tampilkan ajakan memperbarui (hanya Android).
+  Future<bool> checkUpdate({bool force = false}) async {
+    if (kIsWeb) return false;
+    final n = DateTime.now();
+    if (!force && (kBuild == 0 || (_updChecked != null && n.difference(_updChecked!).inMinutes < 30))) return updateReady;
+    _updChecked = n;
+    try {
+      final r = await http.get(Uri.parse('https://hulhup.my.id/version.json?t=${n.millisecondsSinceEpoch}')).timeout(const Duration(seconds: 15));
+      if (r.statusCode != 200) return updateReady;
+      final b = int.tryParse('${(jsonDecode(r.body) as Map)['build']}') ?? 0;
+      final up = b > kBuild;
+      if (up != updateReady) { updateReady = up; notifyListeners(); }
+    } catch (_) {}
+    return updateReady;
+  }
+
+  /// Server tidak mendorong notifikasi; aplikasi menanyakan berkala saat terbuka.
+  Future<void> _poll() async {
+    if (me == null || _starting) return;
+    try {
+      await refresh();
+      if (unreadSocial > _pushed) {
+        final msg = t('push_unread').replaceAll('{n}', '$unreadSocial');
+        banner?.call(msg);
+        await Notifier.show(1, 'Hulhup', msg, t('notif'));
+      }
+      _pushed = unreadSocial;
+      _sp.setInt('pushed', _pushed);
+    } catch (_) {}
+  }
+
+  /// Pengingat "Kamu lelah?" setiap hari jam 19.00, juga kalau aplikasi sudah dibuka hari itu. Dijadwal ulang tiap aplikasi dibuka.
+  Future<void> syncReminders() async {
+    await Notifier.cancelReminders();
+    if (!remind || Push.active) return;
+    await Notifier.daily(101, 19, 0, t('r_title'), t('r_body'), t('notif'));
+  }
+
+  Future<void> setRemind(bool v) async {
+    remind = v;
+    await _sp.setBool('remind', v);
+    notifyListeners();
+    if (v) { await Notifier.allow(); await _sp.setBool('asked', true); await syncReminders(); } else { await Notifier.cancelReminders(); }
+    if (me != null) Push.register(lang);
+  }
+
+  Future<void> _clear() async { await Api.setSession(null); me = null; unread = 0; unreadSocial = 0; _pushed = 0; _sp.setInt('pushed', 0); Notifier.watch(false); }
+
+  Future<Map> auth(String path, Map body) async {
+    final j = await Api.req('POST', path, body: body);
+    me = U.from(j['user']);
+    notifyListeners();
+    start();
+    return j as Map;
+  }
+
+  Future<void> logout() async {
+    await Push.unregister();
+    try { await Api.req('POST', '/logout'); } catch (_) {}
+    await _clear();
+    await refresh();
+  }
+
+  Future<void> deleteAccount() async { await Api.req('DELETE', '/me'); await _clear(); await refresh(); }
+  void setLang(String l) { lang = l; _sp.setString('lang', l); notifyListeners(); syncReminders(); if (me != null) Push.register(l); }
+  void setMode(ThemeMode m) { mode = m; _sp.setInt('mode', m.index); notifyListeners(); }
+
+  /// Teks notifikasi sosial (suka, ikuti, hubungan).
+  String notifText(String type, String extra) {
+    switch (type) {
+      case 'like': return t('n_like');
+      case 'comment': return t('n_comment');
+      case 'reply': return t('n_reply');
+      case 'mention': return t('n_mention');
+      case 'rel_req': return t('n_rel_req').replaceAll('{r}', t('a_$extra').toLowerCase());
+      case 'rel_ok': return t('n_rel_ok').replaceAll('{r}', t('a_$extra').toLowerCase());
+      default: return t('n_follow');
+    }
+  }
+
+  Future<void> setFilter(String v) async {
+    filter = v;
+    await _sp.setString('filter', v);
+    notifyListeners();
+  }
+
+  void poke() => notifyListeners();
+
+  Future<void> setRvis(String v) async {
+    final j = await Api.req('PATCH', '/me/settings', body: {'rvis': v});
+    me = U.from(j['user']);
+    notifyListeners();
+  }
+
+  Future<void> setPvis(String v) async {
+    final j = await Api.req('PATCH', '/me/settings', body: {'pvis': v});
+    me = U.from(j['user']);
+    notifyListeners();
+  }
+
+  Future<bool> _online() async {
+    try { return (await Connectivity().checkConnectivity()).any((e) => e != ConnectivityResult.none); } catch (_) { return true; }
+  }
+
+  A? _pickOffline() {
+    if (offline.isEmpty) return null;
+    var c = offline;
+    if (c.length > 1 && _lastOff != null) c = c.where((a) => a.id != _lastOff).toList();
+    final a = c[_rnd.nextInt(c.length)];
+    _lastOff = a.id;
+    return a;
+  }
+
+  /// Tanpa internet, acak diambil dari audio yang sudah dijadikan offline.
+  Future<A?> random() async {
+    fromOffline = false;
+    if (!await _online()) { fromOffline = true; return _pickOffline(); }
+    try {
+      final f = me == null ? 'public' : filter;
+      final j = await Api.req('GET', '/random?f=$f');
+      if (me != null && j['taps'] != null) tapf[f] = (j['taps'] as num).toInt();
+      notifyListeners();
+      return j['audio'] == null ? null : A.from(j['audio']);
+    } on ApiErr {
+      rethrow;
+    } catch (_) {
+      fromOffline = true;
+      return _pickOffline();
+    }
+  }
+
+  bool isOffline(int id) => offline.any((o) => o.id == id);
+
+  Future<void> toggleOffline(A a) async {
+    final i = offline.indexWhere((o) => o.id == a.id);
+    if (i >= 0) {
+      await deleteOffline('off${a.id}.audio');
+      await Local.delBlob('off${a.id}');
+      offline.removeAt(i);
+    } else {
+      final b = await Api.bytes(a.url);
+      if (b == null) throw ApiErr('server');
+      final j = a.toJson();
+      if (await saveOffline('off${a.id}.audio', b)) {
+        j['url'] = 'file:off${a.id}.audio';
+      } else {
+        await Local.putBlob('off${a.id}', b);
+        j['url'] = 'mem:off${a.id}';
+      }
+      offline.insert(0, A.from(j));
+    }
+    await _sp.setString('offline', jsonEncode(offline.map((o) => o.toJson()).toList()));
+    notifyListeners();
+  }
+
+  /// [loop]: audio berulang terus sampai dijeda atau popup/halaman ditutup.
+  /// [scope]: halaman yang memutar; saat halaman itu ditutup, panggil [leave] agar suara berhenti.
+  double rate = 1.0;
+
+  /// Kecepatan putar (0.5x–2x), diingat untuk pemutaran berikutnya.
+  Future<void> setRate(double r) async {
+    rate = r;
+    notifyListeners();
+    try { await _p.setPlaybackRate(r); } catch (_) {}
+    await _sp.setDouble('rate', r);
+  }
+
+  /// Ganti kecepatan ke pilihan berikutnya (dipakai tombol kecil di tiap pemutar).
+  Future<void> cycleRate() {
+    const r = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final i = r.indexWhere((e) => e >= rate - .001);
+    return setRate(r[(i + 1) % r.length]);
+  }
+
+  // ---------- backsound Hups: pemutar kedua, jalan bersamaan dengan audio lain, bisa dimatikan ----------
+  final _bg = AudioPlayer();
+  int? bgmKey;
+  Object? _bgScope;
+  bool bgmMuted = false;
+  int _bgTok = 0;
+
+  int homeMode = 0;
+  final _bgCache = <String, Uint8List>{};
+  Future<void> playBgm(int key, String url, {Object? scope}) async {
+    if (bgmKey == key) { await _bg.setVolume(bgmMuted ? 0 : 1); return; }
+    final tok = ++_bgTok;
+    bgmKey = key;
+    _bgScope = scope;
+    notifyListeners();
+    try {
+      await _bg.stop();
+      await _bg.setReleaseMode(ReleaseMode.loop);
+      var b = _bgCache[url];
+      if (b == null) {
+        b = await Api.bytes(url);
+        if (b != null) { if (_bgCache.length > 6) { _bgCache.remove(_bgCache.keys.first); } _bgCache[url] = b; }
+      }
+      if (tok != _bgTok) return;
+      await _bg.setVolume(bgmMuted ? 0 : 1);
+      await _bg.play(b != null ? BytesSource(b, mimeType: mimeOf(b)) : UrlSource(url));
+    } catch (_) {
+      // Peramban memblokir putar otomatis sebelum ada ketukan pertama: lepas kuncinya agar dicoba lagi pada pengecekan berikutnya.
+      if (tok == _bgTok) { bgmKey = null; _bgScope = null; notifyListeners(); }
+    }
+  }
+
+  Future<void> stopBgm() async {
+    _bgTok++;
+    bgmKey = null;
+    _bgScope = null;
+    try { await _bg.stop(); } catch (_) {}
+    notifyListeners();
+  }
+
+  void leaveBgm(Object scope) { if (_bgScope == scope && bgmKey != null) Future.microtask(stopBgm); }
+
+  Future<void> setBgmMuted(bool v) async {
+    bgmMuted = v;
+    try { await _bg.setVolume(v ? 0 : 1); } catch (_) {}
+    await _sp.setBool('bgm_muted', v);
+    notifyListeners();
+  }
+
+  Future<void> play(A a, {bool force = false, bool loop = true, Object? scope}) => playUrl(a.id, a.url, force: force, loop: loop, scope: scope);
+
+  /// Putar satu berkas audio; [key] membedakan pemutar (audio post, audio ke-n, audio komentar).
+  Future<void> playUrl(int key, String url, {bool force = false, bool loop = true, Object? scope}) async {
+    if (url.isEmpty) return;
+    if (!force && playing == key) { await stop(); return; }
+    playing = key;
+    _scope = scope;
+    pos.value = 0;
+    dur = 0;
+    notifyListeners();
+    await _p.stop();
+    await _p.setReleaseMode(loop ? ReleaseMode.loop : ReleaseMode.release);
+    final b = await Api.bytes(url);
+    await _p.play(b != null ? BytesSource(b, mimeType: mimeOf(b)) : UrlSource(url));
+    try { await _p.setPlaybackRate(rate); } catch (_) {}
+  }
+
+  Future<void> stop() async {
+    await _p.stop();
+    playing = null;
+    _scope = null;
+    pos.value = 0;
+    notifyListeners();
+  }
+
+  /// Dipanggil dari dispose() halaman: hentikan suara bila diputar dari halaman itu.
+  void leave(Object scope) {
+    if (_scope == scope && playing != null) Future.microtask(stop);
+  }
+
+  Future<void> like(A a) async {
+    final j = await Api.req('POST', '/audios/${a.id}/like');
+    a.liked = j['liked'];
+    a.likes = j['likes'];
+    notifyListeners();
+  }
+}
+
+const S = <String, List<String>>{
+  'login': ['Masuk', 'Sign in'], 'register': ['Daftar', 'Sign up'], 'name': ['Nama', 'Name'],
+  'username': ['Nama pengguna', 'Username'], 'password': ['Kata sandi', 'Password'], 'age': ['Tanggal lahir', 'Date of birth'], 'years': ['tahun', 'years'], 'pprof': ['Tampilkan profil di popup', 'Show profile in popup'], 'who_rand': ['Siapa yang bisa mendengar secara acak', 'Who can hear it randomly'], 'a_public': ['Publik', 'Public'], 'a_followers': ['Pengikut', 'Followers'], 'a_following': ['Mengikuti', 'Following'], 'a_both': ['Pengikut dan mengikuti', 'Followers and following'],
+  'guest': ['Akun tamu', 'Guest account'], 'guest_note': ['Masuk untuk mengunggah suara, menyorot, dan mengikuti.', 'Sign in to upload voices, spotlight, and follow.'],
+  'logout': ['Keluar', 'Sign out'], 'settings': ['Pengaturan', 'Settings'], 'account': ['Akun', 'Account'], 'general': ['Umum', 'General'],
+  'edit_profile': ['Edit profil', 'Edit profile'], 'change_pw': ['Ubah kata sandi', 'Change password'],
+  'old_pw': ['Kata sandi lama', 'Current password'], 'new_pw': ['Kata sandi baru', 'New password'],
+  'delete_acc': ['Hapus akun', 'Delete account'], 'delete_acc_q': ['Akun, semua audio, dan datamu akan dihapus permanen.', 'Your account, all audio, and data will be permanently deleted.'],
+  'cancel': ['Batal', 'Cancel'], 'save': ['Simpan', 'Save'], 'saved': ['Tersimpan', 'Saved'], 'delete': ['Hapus', 'Delete'],
+  'delete_audio_q': ['Hapus audio ini? Audio tidak bisa diedit, hanya dihapus.', 'Delete this audio? Audio cannot be edited, only deleted.'],
+  'language': ['Bahasa', 'Language'], 'appearance': ['Tampilan', 'Appearance'], 'system': ['Sistem', 'System'], 'light': ['Cerah', 'Light'], 'dark': ['Gelap', 'Dark'],
+  'report': ['Laporkan', 'Report'], 'report_title': ['Laporkan konten ini', 'Report this'], 'report_done': ['Terima kasih, laporanmu kami terima', 'Thanks, we received your report'],
+  'r_abuse': ['Pelecehan atau ujaran kebencian', 'Harassment or hate'], 'r_sexual': ['Konten seksual', 'Sexual content'], 'r_violence': ['Kekerasan', 'Violence'], 'r_spam': ['Spam', 'Spam'], 'r_impersonate': ['Meniru orang lain', 'Impersonation'], 'r_other': ['Lainnya', 'Other'],
+  'logout_others': ['Keluar dari perangkat lain', 'Sign out of other devices'], 'logout_others_done': ['Perangkat lain sudah dikeluarkan', 'Other devices signed out'],
+  'sess_t': ['Perangkat yang masuk', 'Signed-in devices'], 'sess_this': ['Perangkat ini', 'This device'], 'sess_active': ['Aktif', 'Active'], 'sess_out': ['Keluarkan', 'Sign out'], 'sess_out_q': ['Perangkat ini akan keluar dari akunmu.', 'This device will be signed out of your account.'], 'sess_all': ['Keluar dari semua perangkat lain', 'Sign out of all other devices'], 'sess_empty': ['Tidak ada perangkat lain', 'No other devices'],
+  'ga_title': ['Unduh Hulhup untuk Android', 'Download Hulhup for Android'], 'ga_note': ['Pasang aplikasi Hulhup di HP Android kamu: notifikasi lebih lengkap dan audio offline tersimpan di HP.', 'Install Hulhup on your Android phone: richer notifications and offline audio saved on your phone.'], 'ga_s1': ['Ketuk Unduh APK', 'Tap Download APK'], 'ga_s2': ['Tunggu unduhan selesai, lalu buka berkas hulhup.apk dari notifikasi unduhan atau aplikasi File / Unduhan', 'Wait for the download to finish, then open hulhup.apk from the download notification or your Files / Downloads app'], 'ga_s3': ['Jika muncul "Izinkan dari sumber ini", ketuk Pengaturan, aktifkan izin untuk peramban yang kamu pakai, lalu kembali', 'If "Allow from this source" appears, tap Settings, turn it on for the browser you use, then go back'], 'ga_s4': ['Ketuk Pasang. Jika Play Protect memberi peringatan, pilih "Tetap pasang"', 'Tap Install. If Play Protect warns you, choose "Install anyway"'], 'ga_s5': ['Buka Hulhup, masuk, lalu izinkan notifikasi supaya pemberitahuan sampai walau aplikasi ditutup', 'Open Hulhup, sign in, then allow notifications so alerts arrive even when the app is closed'], 'ga_tip': ['Jika pemasangan gagal karena versi lama, hapus aplikasi Hulhup yang lama lalu pasang ulang.', 'If the install fails because of an older version, uninstall the old Hulhup app and install again.'], 'more': ['Selengkapnya', 'More'], 'create': ['Buat', 'Create'], 'ga_btn': ['Unduh APK', 'Download APK'], 'ga_32': ['HP Android lama (32-bit)? Unduh versi ini', 'Older 32-bit Android phone? Get this version'], 'ga_ver': ['Versi', 'Version'], 'ga_size': ['Ukuran', 'Size'], 'upd_browser': ['Unduh lewat peramban', 'Download via browser'],
+  'apk_done_web': ['Unduhan dimulai. Buka notifikasi unduhan, lalu ketuk berkas Hulhup untuk memasang.', 'Download started. Open the download notification, then tap the Hulhup file to install.'], 'apk_pct': ['Mengunduh', 'Downloading'],
+  'speed': ['Kecepatan', 'Speed'], 'upd_down': ['Mengunduh pembaruan…', 'Downloading update…'], 'upd_inst': ['Membuka pemasang…', 'Opening installer…'], 'upd_fail': ['Gagal memperbarui. Jika muncul "Aplikasi tidak terpasang", hapus aplikasi lama lalu pasang ulang dari hulhup.my.id (cukup sekali).', 'Update failed. If you see "App not installed", uninstall the old app and reinstall from hulhup.my.id (only once).'], 'upd_now': ['Perbarui sekarang', 'Update now'], 'upd_note': ['Cara memperbarui: unduh ulang aplikasi dari situs, lalu pasang di atas yang lama. Akunmu tetap aman.', 'How to update: download the app again from the website and install it over the old one. Your account stays safe.'], 'upd_s1': ['Tekan tombol Unduh di bawah, file terbuka di browser.', 'Tap Download below; the file opens in your browser.'], 'upd_s2': ['Tunggu unduhan selesai.', 'Wait for the download to finish.'], 'upd_s3': ['Buka file hulhup.apk dari notifikasi unduhan atau folder Unduhan.', 'Open hulhup.apk from the download notification or the Downloads folder.'], 'upd_s4': ['Tekan Pasang. Jika diminta, izinkan pemasangan dari sumber ini.', 'Tap Install. If asked, allow installing from this source.'], 'upd_dl': ['Unduh versi terbaru', 'Download latest version'],
+  'upd_menu': ['Perbarui aplikasi', 'Update app'], 'upd_none': ['Aplikasimu sudah versi terbaru', 'Your app is up to date'], 'upd_title': ['Versi baru tersedia', 'New version available'], 'upd_btn': ['Perbarui', 'Update'],
+  'get_app': ['Unduh aplikasi Android', 'Download Android app'], 'website': ['Situs web hulhup.my.id', 'Website hulhup.my.id'], 'about': ['Tentang Hulhup', 'About Hulhup'], 'policy': ['Kebijakan', 'Policy'], 'privacy': ['Privasi', 'Privacy'],
+  'followers': ['Pengikut', 'Followers'], 'following': ['Mengikuti', 'Following'], 'audio': ['Audio', 'Audio'], 'liked': ['Disorot', 'Spotlighted'],
+  'upload': ['Posting', 'Post'], 'record': ['Rekam', 'Record'], 'stop': ['Berhenti', 'Stop'], 'pick': ['Pilih file', 'Pick file'],
+  'desc': ['Deskripsi', 'Description'], 'bio': ['Bio', 'Bio'], 'popup': ['Tampilkan popup saat diketuk', 'Show popup on tap'],
+  'who': ['Siapa boleh melihat di profil', 'Who can see it on profile'], 'v_all': ['Semua', 'Everyone'], 'v_fol': ['Pengikut', 'Followers'], 'v_me': ['Aku', 'Me'],
+  'noedit': ['Post tidak bisa diedit, hanya dihapus.', 'Posts cannot be edited, only deleted.'],
+  'search': ['Cari', 'Search'], 'notif': ['Notifikasi', 'Notifications'],
+  'n_follow': ['mulai mengikutimu', 'started following you'],
+  'remove_photo': ['Hapus foto profil', 'Remove profile photo'], 'remove_photo_q': ['Foto profil akan kembali ke bawaan.', 'Your profile photo will go back to the default.'], 'photo_removed': ['Foto profil dihapus', 'Profile photo removed'],
+  'a_friend': ['Teman', 'Friends'], 'a_best': ['Sahabat', 'Best friends'], 'a_partner': ['Pasangan', 'Partner'], 'a_family': ['Keluarga', 'Family'],
+  'a_relations': ['Semua hubungan', 'All relationships'], 'a_accounts': ['Pilih akun', 'Choose accounts'], 'f_me': ['Untuk saya', 'For me'],
+  'filter_title': ['Filter suara acak', 'Random voice filter'], 'filter_sub': ['Tombol acak hanya memutar suara dari kelompok ini.', 'The random button only plays voices from this group.'],
+  'nofilter': ['Belum ada suara untuk filter ini', 'No voices for this filter yet'], 'filter_login': ['Masuk dulu untuk memakai filter lain', 'Sign in to use other filters'],
+  'locked': ['Akun ini menggunakan privasi tampilan di profil', 'This account uses profile display privacy'], 'rel_wait_cancel': ['Menunggu · Batalkan', 'Pending · Cancel'],
+  'rel_title': ['Hubungan', 'Relationships'], 'rel_none': ['Belum ada hubungan', 'No relationships yet'], 'rel_add': ['Ajak berhubungan', 'Request relationship'],
+  'rel_pick': ['Pilih jenis hubungan', 'Choose relationship type'], 'rel_wait': ['Menunggu persetujuan', 'Waiting for approval'], 'rel_cancel': ['Batalkan permintaan', 'Cancel request'],
+  'rel_accept': ['Terima', 'Accept'], 'rel_decline': ['Tolak', 'Decline'], 'rel_end': ['Putus hubungan', 'End relationship'],
+  'rel_end_q': ['Putus hubungan dengan {n}? Pihak lain tidak diberi tahu.', 'End the relationship with {n}? They will not be notified.'],
+  'rel_sent': ['Permintaan terkirim', 'Request sent'], 'rel_ended': ['Hubungan berakhir', 'Relationship ended'], 'rel_made': ['Hubungan dibuat', 'Relationship created'],
+  'rel_in': ['Permintaan masuk', 'Incoming requests'], 'rel_out': ['Permintaan terkirim', 'Sent requests'],
+  'n_rel_req': ['mengajakmu berhubungan sebagai {r}', 'wants to be your {r}'], 'n_rel_ok': ['menerima hubungan {r} denganmu', 'accepted your {r} relationship'],
+  'e_rel_exists': ['Sudah ada hubungan atau permintaan dengan akun ini', 'A relationship or request with this account already exists'],
+  'e_need_accounts': ['Pilih minimal satu akun', 'Choose at least one account'],
+  'pick_acc': ['Pilih akun', 'Choose accounts'], 'pick_acc_n': ['{n} akun dipilih', '{n} accounts chosen'], 'search_acc': ['Cari akun', 'Search accounts'], 'pick_acc_hint': ['Ketik nama untuk mencari akun', 'Type a name to find accounts'],
+  'test_notif': ['Tes notifikasi', 'Test notification'], 'test_notif_sub': ['Kirim notifikasi percobaan ke HP ini', 'Send a test notification to this phone'],
+  'notif_off': ['Notifikasi dimatikan di HP. Aktifkan lewat pengaturan aplikasi.', 'Notifications are off on this phone. Turn them on in app settings.'], 'test_sent': ['Notifikasi percobaan dikirim', 'Test notification sent'], 'n_like': ['menyorot audiomu', 'spotlighted your audio'],
+  'hups': ['Hups', 'Hups'], 'rand_tab': ['Acak', 'Random'], 'sorot_tab': ['Sorot', 'Spotlight'], 'saved_tab': ['Simpan', 'Saved'], 'comments': ['Komentar', 'Comments'],
+  'comment_ph': ['Tulis komentar…', 'Write a comment…'], 'reply': ['Balas', 'Reply'], 'replying': ['Membalas {n}', 'Replying to {n}'], 'send': ['Kirim', 'Send'], 'login_comment': ['Masuk untuk ikut berkomentar', 'Sign in to join the conversation'],
+  'write_hups': ['Tulis sesuatu… tanpa batas panjang', 'Write something… no length limit'], 'add_audio': ['Tambah audio', 'Add audio'], 'audio_n': ['Audio ({n}/10)', 'Audio ({n}/10)'],
+  'in_rand': ['Tampil di Acak', 'Show in Random'], 'in_hups': ['Tampil di Hups', 'Show in Hups'], 'multi_no_rand': ['Tulisan saja dan backsound hanya tampil di Hups.', 'Text-only posts and backsounds only appear in Hups.'],
+  'e_pick_place': ['Pilih tampil di Acak, Hups, atau keduanya', 'Choose Random, Hups, or both'], 'e_empty': ['Tulis sesuatu atau tambah audio', 'Write something or add audio'], 'e_too_long': ['Tulisan terlalu panjang', 'Text is too long'],
+  'read_more': ['Selengkapnya', 'Read more'], 'share': ['Bagikan', 'Share'], 'saved_post': ['Disimpan', 'Saved'], 'unsaved_post': ['Dihapus dari simpanan', 'Removed from saved'],
+  'no_hups': ['Belum ada Hups di sini', 'No Hups here yet'], 'empty_saved': ['Belum ada yang disimpan', 'Nothing saved yet'], 'empty_cmt': ['Belum ada komentar. Jadilah yang pertama.', 'No comments yet. Be the first.'],
+  'n_comment': ['mengomentari postinganmu', 'commented on your post'], 'n_reply': ['membalas komentarmu', 'replied to your comment'],
+  'rel_vis': ['Siapa yang bisa melihat hubunganmu', 'Who can see your relationships'], 'rel_locked': ['Daftar hubungan ini privat', 'This relationship list is private'],
+  'n_mention': ['menyebutmu', 'mentioned you'], 'author': ['Penulis', 'Author'], 'pin': ['Sematkan komentar', 'Pin comment'], 'unpin': ['Lepas sematan', 'Unpin comment'], 'pinned': ['Disematkan', 'Pinned'],
+  'notif_edit': ['Pilih', 'Select'], 'notif_del_all': ['Hapus semua', 'Delete all'], 'notif_del_sel': ['Hapus terpilih ({n})', 'Delete selected ({n})'], 'notif_del_q': ['Hapus notifikasi ini?', 'Delete these notifications?'], 'notif_del_all_q': ['Hapus semua notifikasi?', 'Delete all notifications?'], 'notif_deleted': ['Notifikasi dihapus', 'Notifications deleted'],
+  'sent_title': ['Terkirim', 'Sent'], 'sent_none': ['Belum ada yang kamu kirimi', 'You have not sent anything to anyone yet'], 'sent_n': ['{n} kiriman', '{n} sent'], 'sent_hint': ['Pilih akun untuk melihat apa yang pernah kamu kirim', 'Pick an account to see what you sent them'],
+  'forgot': ['Lupa kata sandi?', 'Forgot password?'], 'recover_title': ['Atur ulang kata sandi', 'Reset password'], 'recover_hint': ['Masukkan nama pengguna dan kode pemulihan yang kamu simpan saat mendaftar.', 'Enter your username and the recovery code you saved when signing up.'], 'recovery_code': ['Kode pemulihan', 'Recovery code'], 'new_password': ['Kata sandi baru', 'New password'], 'recover_do': ['Atur ulang', 'Reset'], 'recover_ok': ['Kata sandi diganti. Masuk dengan kata sandi baru.', 'Password changed. Sign in with the new password.'],
+  'rec_show_title': ['Simpan kode pemulihanmu', 'Save your recovery code'], 'rec_show_note': ['Kode ini satu-satunya cara masuk kembali bila kamu lupa kata sandi. Catat di tempat aman; kode ini hanya tampil sekali.', 'This code is the only way back in if you forget your password. Keep it somewhere safe; it is shown only once.'], 'rec_copy': ['Salin kode', 'Copy code'], 'rec_saved': ['Sudah kusimpan', 'I saved it'], 'rec_new': ['Buat kode pemulihan baru', 'Create a new recovery code'], 'rec_new_note': ['Kode lama tidak berlaku lagi. Masukkan kata sandimu untuk membuat yang baru.', 'The old code stops working. Enter your password to create a new one.'], 'e_bad_recovery': ['Nama pengguna atau kode pemulihan salah', 'Wrong username or recovery code'],
+  'bgm_label': ['Jadikan backsound', 'Use as backsound'], 'bgm_note': ['Terputar otomatis saat post terlihat di Hups, bisa dimatikan pembaca.', 'Plays automatically while the post is in view in Hups; readers can mute it.'], 'bgm_tag': ['Backsound', 'Backsound'], 'bgm_mute': ['Matikan backsound', 'Mute backsound'], 'bgm_unmute': ['Nyalakan backsound', 'Unmute backsound'],
+  'cmt_audio_max': ['Maksimal 1 audio per komentar', 'Up to 1 audio per comment'], 'post_audio_max': ['Maksimal 3 audio per post', 'Up to 3 audios per post'], 'rand_one': ['Post di Acak hanya boleh 1 audio', 'Posts in Random can hold only 1 audio'], 'e_rand_one': ['Post di Acak hanya boleh 1 audio', 'Posts in Random can hold only 1 audio'], 'multi_done': ['Selesai', 'Done'], 'multi_note': ['Boleh pilih lebih dari satu', 'You can pick more than one'], 'rel_count_hidden': ['Tersembunyi', 'Hidden'],
+  'report_cmt': ['Laporkan komentar', 'Report comment'], 'post_hint_text': ['Tulis sesuatu atau tambah audio', 'Write something or add audio'], 'rec_over': ['Audio melebihi 1 MB', 'Audio is over 1 MB'], 'search_hint2': ['Cari akun, audio, atau Hups', 'Search accounts, audio, or Hups'], 'tag_hint': ['Ketik @ untuk menandai akun', 'Type @ to tag an account'],
+  'link_copied': ['Tautan disalin', 'Link copied'], 'rec_title': ['Rekam audio', 'Record audio'], 'rec_hint': ['Ketuk untuk merekam, maksimal 15 detik', 'Tap to record, up to 15 seconds'], 'use_audio': ['Pakai audio ini', 'Use this audio'],
+  'delete_cmt_q': ['Hapus komentar ini beserta balasannya?', 'Delete this comment and its replies?'], 'faq': ['FAQ', 'FAQ'], 'not_found': ['Halaman tidak ditemukan', 'Page not found'], 'post_gone': ['Post tidak ditemukan atau tidak bisa kamu lihat', 'Post not found or not visible to you'],
+  'posting': ['Memposting…', 'Posting…'], 'posted': ['Terkirim', 'Posted'], 'new_post': ['Buat post', 'New post'], 'text_audio': ['Teks dan audio', 'Text and audio'], 'who_see': ['Siapa yang bisa melihat', 'Who can see it'],
+  'one_audio_cmt': ['Satu audio per komentar', 'One audio per comment'],  'text_only': ['Hanya teks', 'Text only'],
+  'empty_audio': ['Belum ada audio', 'No audio yet'], 'empty_liked': ['Belum ada yang disorot', 'Nothing spotlighted yet'],
+  'empty_notif': ['Belum ada notifikasi', 'No notifications yet'], 'empty_search': ['Tidak ada hasil', 'No results'], 'empty_list': ['Belum ada akun', 'No accounts yet'],
+  'follow': ['Ikuti', 'Follow'], 'unfollow': ['Mengikuti', 'Following'], 'photo': ['Foto profil', 'Profile photo'], 'cover': ['Latar profil', 'Cover'],
+  'change': ['Ganti', 'Change'], 'need_login': ['Masuk dulu untuk melakukan ini', 'Sign in first to do this'],
+  'nobody': ['Belum ada suara. Jadilah yang pertama.', 'No voices yet. Be the first.'], 'uploaded': ['Audio terunggah', 'Audio uploaded'],
+  'welcome': ['Selamat datang', 'Welcome'], 'too_long': ['Maksimal 15 detik', 'Maximum 15 seconds'], 'mic_denied': ['Izin mikrofon ditolak', 'Microphone permission denied'],
+  'preview': ['Dengar', 'Listen'], 'done': ['Selesai', 'Done'], 'retry': ['Coba lagi', 'Retry'], 'untitled': ['Audio tanpa deskripsi', 'Audio without description'],
+  'e_rate_limited': ['Terlalu sering, coba lagi sebentar lagi', 'Too many requests, try again shortly'],
+  'e_banned': ['Akun ini dibatasi', 'This account is restricted'],
+  'e_network': ['Tidak terhubung ke server', 'Cannot reach the server'], 'e_server': ['Terjadi kesalahan', 'Something went wrong'],
+  'e_unauthorized': ['Sesi berakhir, silakan masuk lagi', 'Session expired, please sign in again'],
+  'e_username_taken': ['Nama pengguna sudah dipakai', 'Username is already taken'],
+  'e_bad_credentials': ['Nama pengguna atau kata sandi salah', 'Wrong username or password'],
+  'e_bad_username': ['Nama pengguna 3-20 karakter: huruf kecil, angka, garis bawah', 'Username 3-20 chars: lowercase, digits, underscore'],
+  'e_bad_name': ['Nama wajib diisi (maks 40 karakter)', 'Name is required (max 40 chars)'],
+  'e_bad_password': ['Kata sandi minimal 6 karakter dan tanpa spasi', 'Password must be at least 6 characters with no spaces'],
+  'e_bad_age': ['Tanggal lahir tidak valid', 'Invalid date of birth'], 'e_bad_bio': ['Bio maksimal 300 karakter', 'Bio max 300 characters'],
+  'e_bad_file': ['File tidak valid', 'Invalid file'], 'e_too_big': ['File terlalu besar (maks 1 MB)', 'File too large (max 1 MB)'],
+  'e_not_found': ['Tidak ditemukan', 'Not found'],
+  'e_forbidden': ['Tindakan ini tidak diizinkan', 'This action is not allowed'],
+  'a_me': ['Hanya untuk saya', 'Only me'], 'pvis': ['Siapa yang bisa melihat postinganku', 'Who can see my posts'],
+  'remind': ['Pengingat harian', 'Daily reminder'], 'remind_sub': ['Notifikasi “Kamu lelah?” setiap hari jam 19.00', 'A “Feeling tired?” notification every day at 7 PM'],
+  'streak_t': ['{n} hari berturut-turut', '{n}-day streak'], 'days_total': ['Total masuk {n} hari', '{n} days signed in in total'],
+  'view_photo': ['Lihat foto', 'View photo'], 'change_photo': ['Ganti foto', 'Change photo'],
+  'search_hint': ['Cari akun atau audio', 'Search accounts or audio'], 'sec_acc': ['Akun', 'Accounts'], 'sec_audio': ['Audio', 'Audio'],
+  'n_streak': ['Kamu sudah masuk {n} hari berturut-turut', 'You’ve signed in {n} days in a row'],
+  'n_missed': ['Kamu tidak masuk {n} hari. Rangkaianmu dimulai lagi dari awal.', 'You missed {n} day(s). Your streak starts over.'],
+  'push_unread': ['{n} notifikasi baru', '{n} new notifications'],
+  'r_title': ['Kamu lelah?', 'Feeling tired?'], 'r_body': ['Coba lah untuk mendengarkan beberapa suara', 'Try listening to a few voices'],
+  'mk_offline': ['Jadikan offline', 'Make available offline'], 'is_offline': ['Tersimpan offline', 'Saved offline'], 'offline_t': ['Audio offline', 'Offline audio'],
+  'saved_off': ['Disimpan untuk offline', 'Saved for offline'], 'removed_off': ['Dihapus dari offline', 'Removed from offline'], 'off_fail': ['Tidak bisa menyimpan audio ini', 'Couldn’t save this audio'],
+  'empty_offline': ['Belum ada audio offline. Simpan lewat popup acak atau daftar audio.', 'No offline audio yet. Save from the random popup or an audio list.'],
+  'no_net': ['Tidak ada internet. Memutar audio offline.', 'No internet. Playing offline audio.'], 'no_net_empty': ['Tidak ada internet dan belum ada audio offline.', 'No internet and no offline audio yet.'],
+  'e_storage_full': ['Penyimpanan penuh. Hapus beberapa audio atau foto dulu.', 'Storage is full. Delete some audio or photos first.'],
+  'remove_follower': ['Hapus pengikut', 'Remove follower'], 'remove': ['Hapus', 'Remove'], 'follower_removed': ['Pengikut dihapus', 'Follower removed'],
+  'remove_follower_q': ['{name} tidak akan mengikutimu lagi. Dia tidak diberi tahu.', '{name} will no longer follow you. They won’t be notified.'],
+  'streak_cal': ['Hari masuk', 'Sign-in days'], 'cal_in': ['Masuk', 'Signed in'], 'cal_miss': ['Tidak masuk', 'Missed'], 'cal_today': ['Hari ini', 'Today'],
+  'cal_month': ['Bulan ini: {a} hari masuk, {b} hari tidak masuk', 'This month: {a} days signed in, {b} missed'],
+  'cal_missed_list': ['Hari yang tidak masuk', 'Days you missed'], 'cal_none': ['Tidak ada hari yang terlewat', 'No missed days'],
+  'cal_note': ['Riwayat sebelum fitur ini hanya tercatat dari rangkaian terakhir.', 'History before this feature is only known from your latest streak.'],
+  'ago_now': ['baru saja', 'just now'], 'ago_m': ['mnt lalu', 'min ago'], 'ago_h': ['jam lalu', 'h ago'], 'ago_d': ['hari lalu', 'd ago'],
+  'e_too_big_img': ['Foto terlalu besar (maks 3 MB)', 'Photo too large (max 3 MB)'],
+  'about_t': [
+    'Hulhup adalah ruang suara dan tulisan yang sederhana.\n\nAcak: ketuk satu tombol, dengarkan suara singkat (maksimal 15 detik) dari orang-orang di seluruh dunia, tanpa perlu masuk.\n\nHups: tempat tulisan tanpa batas panjang, dengan satu atau beberapa audio (sampai 10) dan komentar bertingkat seperti di forum. Satu post bisa tampil di Acak, di Hups, atau keduanya. Post dengan lebih dari satu audio hanya tampil di Hups.\n\nMasuk hanya jika kamu ingin membuat post, menyorot, berkomentar, menyimpan, atau mengikuti akun lain. Tanpa akun kamu tetap bisa melihat dan mendengar.\n\nKamu mengatur sendiri siapa yang bisa melihat tiap post, siapa yang bisa melihat profilmu, dan siapa yang bisa melihat daftar hubunganmu. Post apa pun bisa dibagikan lewat tautan; tautan hanya terbuka untuk orang yang berhak melihatnya.\n\nDi Android, pengingat harian dan pemberitahuan sorotan, komentar, dan pengikut baru datang dari server sehingga tetap masuk walau aplikasi tertutup.\n\nHulhup tersedia di web (hulhup.my.id) dan sebagai aplikasi Android, dengan akun dan data yang sama.\n\nHulhup lahir pada 1 Oktober 2026.\n\nHulhup adalah produk dari Misyi.\n\nVersi 1.3.0',
+    'Hulhup is a simple home for voices and writing.\n\nRandom: tap one button and hear a short voice (up to 15 seconds) from people around the world, no sign-in needed.\n\nHups: a place for text of any length, with one or several audios (up to 10) and threaded comments like a forum. A post can show in Random, in Hups, or both. A post with more than one audio only shows in Hups.\n\nSign in only if you want to post, spotlight, comment, save, or follow other accounts. Without an account you can still look and listen.\n\nYou choose who can see each post, who can see your profile, and who can see your relationship list. Any post can be shared as a link; the link only opens for people allowed to see it.\n\nOn Android, the daily reminder and alerts for spotlights, comments, and new followers come from the server, so they arrive even when the app is closed.\n\nHulhup is available on the web (hulhup.my.id) and as an Android app, with the same account and data.\n\nHulhup was born on 1 October 2026.\n\nHulhup is a product of Misyi.\n\nVersion 1.3.0'],
+  'policy_t': [
+    'Dengan memakai Hulhup kamu setuju pada aturan berikut.\n\n1. Setiap audio berdurasi maksimal 15 detik dan harus milikmu atau kamu punya izin memakainya. Setiap audio maksimal 1 MB. Satu post Hups memuat maksimal 3 audio (satu boleh dijadikan backsound; post di Acak hanya 1 audio) dan satu komentar maksimal 1 audio. Tulisan di post dan komentar tidak dibatasi panjangnya. Foto profil maksimal 3 MB.\n2. Dilarang mengunggah atau menulis konten yang melecehkan, menebar kebencian, mengandung kekerasan atau seksual, melanggar hukum, atau meniru orang lain.\n3. Dilarang spam dan menyalahgunakan layanan.\n4. Untuk setiap post kamu memilih tampil di Acak, di Hups, atau keduanya, dan siapa yang boleh melihatnya: publik, pengikut, mengikuti, pengikut dan mengikuti, hubungan tertentu, atau akun pilihanmu. Pilihan yang sama berlaku untuk Acak dan Hups. Post publik dapat dilihat siapa saja, termasuk tanpa akun.\n5. Di Pengaturan kamu memilih siapa yang bisa melihat profilmu dan siapa yang bisa melihat daftar hubunganmu, termasuk hanya untuk saya.\n6. Post tidak bisa diedit, hanya dihapus. Kamu bebas menghapus post, komentarmu, atau akunmu kapan saja. Pemilik post juga bisa menghapus komentar di postnya.\n7. Membagikan tautan post tidak membuka akses: tautan hanya terbuka untuk orang yang berhak melihat post itu.\n8. Kami dapat menghapus konten, memberi tanda verifikasi, atau membatasi dan memblokir akun yang melanggar aturan ini.\n9. Hulhup disediakan apa adanya, aturan dapat diperbarui dan versi terbaru selalu ada di halaman ini.',
+    'By using Hulhup you agree to the following.\n\n1. Each audio is at most 15 seconds and must be yours or you must have permission to use it. Each audio is at most 1 MB. A Hups post holds at most 3 audios (one can be a backsound; posts in Random hold only 1 audio) and a comment at most 1 audio. Text in posts and comments has no length limit. Profile photos are at most 3 MB.\n2. Do not upload or write content that harasses, spreads hate, contains violence or sexual material, breaks the law, or impersonates others.\n3. No spam or misuse of the service.\n4. For each post you choose to show it in Random, in Hups, or both, and who may see it: public, followers, following, followers and following, certain relationships, or accounts you pick. The same choice applies to Random and Hups. Public posts can be seen by anyone, including without an account.\n5. In Settings you choose who can see your profile and who can see your relationship list, including only me.\n6. Posts cannot be edited, only deleted. You may delete posts, your comments, or your account at any time. A post owner can also delete comments on their post.\n7. Sharing a post link does not grant access: the link only opens for people who are allowed to see that post.\n8. We may remove content, mark accounts as verified, or restrict and ban accounts that break these rules.\n9. Hulhup is provided as is. These rules may be updated and the latest version is always on this page.'],
+  'privacy_t': [
+    'Data yang kami simpan: nama, nama pengguna, tanggal lahir, bio, foto profil, post (tulisan dan audio), komentar, sorotan, post yang kamu simpan, pengikut, hubungan, serta jumlah hari kamu masuk. Tanggal lahir dan usiamu tidak ditampilkan ke pengguna lain. Daftar post yang kamu simpan dan yang kamu sorot hanya terlihat olehmu.\n\nKata sandi disimpan dalam bentuk hash, tidak pernah dalam bentuk asli.\n\nNotifikasi: di Android, Hulhup meminta izin notifikasi untuk pengingat harian jam 19.00 WIB serta pemberitahuan sorotan, komentar, balasan, dan pengikut baru. Agar notifikasi masuk walau aplikasi tertutup, aplikasi mendaftarkan token perangkat ke layanan Firebase Cloud Messaging milik Google dan menyimpannya di server kami bersama bahasa dan pilihan pengingatmu. Token dihapus saat kamu keluar. Kamu bisa mematikan notifikasi di Pengaturan atau di pengaturan sistem perangkat.\n\nMikrofon hanya dipakai saat kamu menekan tombol rekam. Galeri hanya dibuka saat kamu memilih foto atau berkas audio.\n\nTanpa login, kamu hanya melihat dan mendengar; kami tidak membuat profil tamu.\n\nAudio yang kamu jadikan offline disalin dan disimpan di perangkatmu supaya bisa diputar tanpa internet. Kamu bisa menghapusnya kapan saja dari menu Audio offline.\n\nPenyimpanan: akun, foto profil, dan data terstrukturmu disimpan di server database kami; tulisan panjang disimpan di database dokumen terpisah; audio disimpan di layanan penyimpanan cloud terpisah. Koneksi ke server dienkripsi (HTTPS). Post hanya bisa dilihat dan diputar oleh orang yang berhak sesuai pilihan privasimu. Moderasi (menghapus konten pelanggar, tanda verifikasi, pembatasan akun) dilakukan langsung oleh tim kami di server, tidak ada halaman admin publik.\n\nKami tidak menjual datamu dan tidak menampilkan iklan untuk saat ini.\n\nMenghapus post, komentar, atau akun akan menghapus datanya secara permanen dari server.',
+    'Data we store: name, username, date of birth, bio, profile photo, posts (text and audio), comments, spotlights, posts you save, followers, relationships, and the number of days you signed in. Your date of birth and age are never shown to other users. Your saved and spotlighted lists are visible only to you.\n\nPasswords are stored as hashes, never in plain form.\n\nNotifications: on Android, Hulhup asks for notification permission for a daily reminder at 7 PM (WIB) and alerts for spotlights, comments, replies, and new followers. So that notifications arrive even when the app is closed, the app registers a device token with Google\'s Firebase Cloud Messaging and stores it on our server together with your language and reminder choice. The token is removed when you sign out. You can turn notifications off in Settings or in your device settings.\n\nThe microphone is used only when you press record. The gallery opens only when you pick a photo or audio file.\n\nWithout signing in you only look and listen; we do not create guest profiles.\n\nAudio you make available offline is copied and stored on your device so it can play without internet. You can remove it anytime from the Offline audio menu.\n\nStorage: your account, profile photos and structured data are kept in our server database; long text is kept in a separate document database; audio is kept in separate cloud storage. Connections to the server are encrypted (HTTPS). Posts can only be seen and played by people allowed by your privacy choices. Moderation (removing violating content, verification marks, restricting accounts) is done directly by our team on the server; there is no public admin page.\n\nWe do not sell your data and show no ads for now.\n\nDeleting a post, a comment, or your account permanently removes the data from the server.'],
+};
