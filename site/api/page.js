@@ -7,6 +7,7 @@ let tpl = null;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const clip = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 const PRIVATE = new Set(['settings', 'notifications', 'login', 'recover', 'new', 'sent', 'me', 'offline', 'search', 'streak', 'get-app']);
+const NAMES = { settings: 'Pengaturan', notifications: 'Notifikasi', login: 'Masuk', recover: 'Lupa kata sandi', new: 'Buat post', sent: 'Terkirim', me: 'Profilku', offline: 'Audio offline', search: 'Cari', streak: 'Streak', 'get-app': 'Unduh aplikasi Android', account: 'Akun', language: 'Bahasa', appearance: 'Tampilan', notifications2: 'Notifikasi', security: 'Keamanan', password: 'Ganti kata sandi', profile: 'Ubah profil', sessions: 'Perangkat masuk', sorot: 'Sorot', saved: 'Disimpan' };
 const STATIC = {
   hups: ['Hups — tulisan dan suara di Hulhup', 'Hups adalah linimasa tulisan Hulhup dengan audio opsional, komentar, dan balasan.'],
   faq: ['FAQ — Hulhup', 'Pertanyaan yang sering diajukan tentang Hulhup: Acak, Hups, backsound, tag, privasi, dan lupa sandi.'],
@@ -33,8 +34,8 @@ module.exports = async (req, res) => {
       canon = '/p/' + seg[1];
     } else { robots = 'noindex, nofollow'; canon = '/p/' + seg[1]; title = 'Post tidak tersedia — Hulhup'; }
   } else if (k === 'u' && seg[1]) {
-    canon = '/u/' + encodeURIComponent(seg[1]);
-    if (seg.length > 2) { robots = 'noindex, follow'; }
+    canon = '/u/' + seg.map((x, i) => i ? encodeURIComponent(x) : 'u').slice(0).join('/').replace(/^u\//, '').replace(/^/, '/u/');
+    if (seg.length > 2) { robots = 'noindex, follow'; title = `${seg[2]} · @${seg[1]} · Hulhup`; }
     else {
       const d = await j('/users/' + encodeURIComponent(seg[1]));
       const x = d && (d.user || d);
@@ -42,7 +43,10 @@ module.exports = async (req, res) => {
       else { robots = 'noindex, nofollow'; title = 'Akun tidak ditemukan — Hulhup'; }
     }
   } else if (STATIC[k]) { [title, desc] = STATIC[k]; canon = '/' + k; }
-  else if (PRIVATE.has(k)) { robots = 'noindex, nofollow'; canon = '/' + k; }
+  else if (PRIVATE.has(k)) {
+    robots = 'noindex, nofollow'; canon = '/' + seg.map(encodeURIComponent).join('/');
+    title = [seg.map((x) => NAMES[x] || x).reverse().join(' · '), 'Hulhup'].join(' · ');
+  }
   else if (k === 'acak' || k === '') { canon = '/'; }
   else { robots = 'noindex, nofollow'; status = 404; title = 'Halaman tidak ditemukan — Hulhup'; }
   let h = tpl;
