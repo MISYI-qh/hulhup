@@ -34,7 +34,7 @@ module.exports = async (req, res) => {
       canon = '/p/' + seg[1];
     } else { robots = 'noindex, nofollow'; canon = '/p/' + seg[1]; title = 'Post tidak tersedia — Hulhup'; }
   } else if (k === 'u' && seg[1]) {
-    canon = '/u/' + seg.map((x, i) => i ? encodeURIComponent(x) : 'u').slice(0).join('/').replace(/^u\//, '').replace(/^/, '/u/');
+    canon = '/' + seg.map(encodeURIComponent).join('/');
     if (seg.length > 2) { robots = 'noindex, follow'; title = `${seg[2]} · @${seg[1]} · Hulhup`; }
     else {
       const d = await j('/users/' + encodeURIComponent(seg[1]));
