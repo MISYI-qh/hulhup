@@ -172,6 +172,15 @@ test('penanda AI dari metadata (audio dan foto profil)', async () => {
   assert.equal((await call('GET', '/me', { token: a })).user.avatar_ai, true);
   assert.equal((await call('POST', '/me/avatar', { token: a, raw: png('tEXtSoftware\0Camera') })).ok, true);
   assert.equal((await call('GET', '/me', { token: a })).user.avatar_ai, false);
+  // pengakuan sendiri: tanda tetap muncul walau berkasnya bersih; tidak bisa menghapus tanda hasil metadata
+  assert.equal((await call('POST', '/me/avatar_ai', { token: a, body: { on: true } })).user.avatar_ai, true);
+  assert.equal((await call('POST', '/me/avatar_ai', { token: a, body: { on: false } })).user.avatar_ai, false);
+  const dec = await mkpost(a, 'mengaku AI', { ai_self: true });
+  assert.equal((await call('GET', `/posts/${dec.id}`, { token: a })).post.ai, true);
+  // C2PA saja (kamera asli juga menulisnya) dan kata "audio" tidak boleh dianggap AI
+  const real = Buffer.concat([mp3(300), Buffer.from('c2pa jumbf AudioHandler audio/mpeg soun'), Buffer.alloc(50, 3)]);
+  const rp = await mkpost(a, 'rekaman biasa', {}, real);
+  assert.equal((await call('GET', `/posts/${rp.id}`, { token: a })).post.ai, false);
 });
 
 test('algoritma Hups: sorot + komentar + waktu', async () => {
@@ -216,4 +225,24 @@ test('notifikasi bisa dihapus semua atau dipilih; terkirim; lupa sandi', async (
   assert.ok((await call('POST', '/login', { body: { username: 'lupaa', password: 'baru123' } })).token);
   assert.equal((await call('GET', '/me', { token: rg.token })).error, 'unauthorized'); // sesi lama dicabut
   assert.equal((await call('POST', '/recover', { body: { username: 'lupaa', code: rg.recovery, password: 'baru1234' } })).error, 'bad_recovery'); // kode lama hangus
+});
+
+test('deteksi isi lewat layanan: AI -> ditandai, human/gagal -> tidak', async () => {
+  const { verdictOf, isAiImage, isAiAudio } = await import('../lib/aidetect.js');
+  assert.equal(verdictOf({ report: { ai_generated: { verdict: 'ai' } } }), true);
+  assert.equal(verdictOf({ report: { ai_generated: { verdict: 'human' } } }), false);
+  assert.equal(verdictOf({ report: { ai_generated: { verdict: 'unknown' } } }), null);
+  assert.equal(verdictOf({ is_ai: true }), true);
+  assert.equal(verdictOf(null), null);
+  const realFetch = globalThis.fetch;
+  process.env.AI_DETECT_KEY = 'k'; process.env.AI_DETECT_AUDIO_URL = 'https://x.test/a';
+  try {
+    globalThis.fetch = async (u) => ({ ok: true, json: async () => ({ report: { ai_generated: { verdict: String(u).includes('image') ? 'ai' : 'human' } } }) });
+    assert.equal(await isAiImage(Buffer.from('abc'), 'image/png'), true);
+    assert.equal(await isAiAudio(Buffer.from('abc'), 'audio/mpeg'), false);
+    globalThis.fetch = async () => { throw new Error('down'); }; // layanan mati: tidak menuduh
+    assert.equal(await isAiImage(Buffer.from('abc'), 'image/png'), false);
+    globalThis.fetch = async () => ({ ok: false, status: 500 });
+    assert.equal(await isAiAudio(Buffer.from('abc'), 'audio/mpeg'), false);
+  } finally { globalThis.fetch = realFetch; delete process.env.AI_DETECT_KEY; delete process.env.AI_DETECT_AUDIO_URL; }
 });
