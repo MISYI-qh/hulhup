@@ -132,6 +132,10 @@
   ],
   "rewrites": [
     {
+      "source": "/hulhup-32.apk",
+      "destination": "/hulhup.apk"
+    },
+    {
       "source": "/:path((?!.*\\.).*)",
       "destination": "/api/page?p=/:path"
     }
