@@ -70,6 +70,12 @@ jobs:
       - name: Terbitkan ke Vercel (jika VERCEL_TOKEN ada)
         if: ${{ env.VT != '' }}
         run: npx --yes vercel@latest deploy app/build/web --prod --yes --token "$VT"
+      - name: Terbitkan API ke Vercel (hulhup-api)
+        if: ${{ env.VT != '' }}
+        working-directory: app/backend/api
+        env:
+          VERCEL_PROJECT_ID: prj_9N0lGmoRxIzUSkCYOMBTEFOnytI3
+        run: npx --yes vercel@latest deploy --prod --yes --token "$VT"
       - uses: actions/upload-pages-artifact@v3
         with: { path: app/build/web }
       - id: dep
