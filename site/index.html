@@ -36,24 +36,25 @@
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#FFFFFF;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
     #splash{position:fixed;left:0;top:0;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#FFFFFF;color:#111111;z-index:9;transition:opacity .25s}
     #splash{--e:#5B47F5;--p:#fff;--w:#4330D0}
-    #splash .row{display:flex;align-items:center;gap:12px}
-    #splash svg{width:84px;height:63px;display:block;overflow:visible}
-    #splash .eyes{animation:rise 2.4s infinite}
-    #splash .pu{animation:look 2.4s infinite}
-    #splash .eye{transform-box:fill-box;transform-origin:50% 50%;animation:blink 2.4s infinite}
+    #splash .row{display:flex;align-items:center}
+    #splash svg{width:96px;height:72px;display:block;overflow:visible}
+    #splash .eyes{animation:rise 3s both}
+    #splash .pu{animation:look 3s both}
+    #splash .eye{transform-box:fill-box;transform-origin:50% 50%;animation:blink 3.6s 1.2s infinite}
     #splash .e{fill:var(--e)}#splash .p{fill:var(--p)}#splash .w{fill:var(--w)}
-    #splash .t{font:700 48px/1 Outfit,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;letter-spacing:-1.2px;animation:read 2.4s infinite}
-    @keyframes rise{0%,4%{transform:translateY(30px);animation-timing-function:cubic-bezier(.2,1.4,.4,1)}22%,84%{transform:translateY(0);animation-timing-function:ease-in}98%,100%{transform:translateY(30px)}}
-    @keyframes look{0%,10%{transform:translateX(0)}30%,70%{transform:translateX(5px)}100%{transform:translateX(0)}}
-    @keyframes blink{0%,75%,85%,100%{transform:scaleY(1)}80%{transform:scaleY(.1)}}
-    @keyframes read{0%,10%{clip-path:inset(0 100% 0 0)}70%,90%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 0 0 0)}}
+    #splash .t{display:inline-block;overflow:hidden;white-space:nowrap;max-width:0;animation:read 3s cubic-bezier(.65,0,.35,1) both}
+    #splash .t b{display:inline-block;margin-left:14px;font:700 52px/1.1 Outfit,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;letter-spacing:-1.2px}
+    @keyframes rise{0%,6%{transform:translateY(0)}18%{transform:translateY(32px);animation-timing-function:cubic-bezier(.2,1.5,.4,1)}38%,100%{transform:translateY(0)}}
+    @keyframes look{0%,36%{transform:translateX(-2px)}84%,100%{transform:translateX(5px)}}
+    @keyframes blink{0%,90%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+    @keyframes read{0%,36%{max-width:0}84%,100%{max-width:260px}}
     @media (prefers-color-scheme:dark){html,body,#splash{background:#0B0B0B;color:#F2F2F2}#splash{--e:#fff;--p:#5B47F5;--w:#5B47F5}}
-    @media (prefers-reduced-motion:reduce){#splash .eyes,#splash .pu,#splash .eye,#splash .t{animation:none}}
+    @media (prefers-reduced-motion:reduce){#splash .eyes,#splash .pu,#splash .eye{animation:none}#splash .t{animation:none;max-width:260px}}
   </style>
 </head>
 <body>
   <div id="splash" aria-hidden="true">
-    <div class="row"><svg viewBox="16 20 88 66" aria-hidden="true"><defs><clipPath id="c"><rect x="-200" y="-200" width="520" height="282.4"/></clipPath></defs><g clip-path="url(#c)"><g class="eyes"><g class="eye"><ellipse class="e" cx="44" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="46.3" cy="49.9" r="5.9"/></g><g class="eye"><ellipse class="e" cx="76" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="78.3" cy="49.9" r="5.9"/></g></g></g><rect class="w" x="21.6" y="60" width="76.8" height="22.4" rx="7.5"/></svg><span class="t">Hulhup</span></div>
+    <div class="row"><svg viewBox="16 20 88 66" aria-hidden="true"><defs><clipPath id="c"><rect x="-200" y="-200" width="520" height="282.4"/></clipPath></defs><g clip-path="url(#c)"><g class="eyes"><g class="eye"><ellipse class="e" cx="44" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="46.3" cy="49.9" r="5.9"/></g><g class="eye"><ellipse class="e" cx="76" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="78.3" cy="49.9" r="5.9"/></g></g></g><rect class="w" x="21.6" y="60" width="76.8" height="22.4" rx="7.5"/></svg><span class="t"><b>Hulhup</b></span></div>
   </div>
   <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Hulhup — ketuk, dengarkan suara acak</h1>
   <noscript><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
