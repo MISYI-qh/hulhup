@@ -31,6 +31,7 @@ jobs:
           flutter pub get
           dart run flutter_launcher_icons
           dart run flutter_native_splash:create
+          python3 tool/patch_splash.py
       - name: Build web
         working-directory: app
         run: |
