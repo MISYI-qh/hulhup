@@ -1,22 +1,26 @@
 # Hulhup
 
-> Hulhup adalah aplikasi audio singkat buatan Misyi. Pengguna mengetuk satu tombol untuk mendengar suara acak (maksimal 15 detik) dari pengguna lain, dan bisa merekam suaranya sendiri dengan pilihan privasi. Lahir 1 Oktober 2026. Gratis, tanpa iklan untuk saat ini.
+> Hulhup adalah ruang suara dan tulisan buatan Misyi. Ketuk satu tombol untuk mendengar suara singkat acak (maksimal 15 detik) dari pengguna lain, atau jelajahi post di Hups. Post boleh berisi tulisan saja, satu audio, atau keduanya, dan audionya bisa dijadikan backsound. Lahir 1 Oktober 2026. Gratis, tanpa iklan untuk saat ini.
 
-Hulhup is a short-audio app by Misyi: tap one button, hear a random voice clip (max 15 seconds) from another user. Free, no ads for now. Available on the web and as an Android app.
+Hulhup is a home for voices and writing by Misyi: tap one button to hear a random short voice clip (max 15 seconds) from another user, or browse posts in Hups. A post can be text only, one audio, or both, and the audio can be a backsound. Free, no ads for now. Available on the web and as an Android app.
 
 ## Halaman utama
 - [Hulhup (web app)](https://hulhup.my.id/): aplikasi web, bisa dipakai langsung di peramban
 - [Unduh aplikasi Android (.apk)](https://hulhup.my.id/hulhup.apk): satu-satunya tempat unduhan resmi
 - [Ringkasan lengkap untuk AI](https://hulhup.my.id/llms-full.txt): penjelasan fitur, privasi, dan batasan
+- [FAQ](https://hulhup.my.id/faq): pertanyaan yang sering diajukan
 
 ## Fakta singkat
-- Audio maksimal 15 detik dan 1 MB; teks post, deskripsi, dan komentar tidak dibatasi panjangnya
-- Hups: linimasa tulisan dengan hingga 3 audio opsional (salah satunya bisa dijadikan backsound; post Acak hanya 1 audio), komentar dengan 1 audio opsional, balasan bersarang, tag @akun, sematkan komentar, laporan
-- Urutan Hups dipengaruhi sorot, komentar, dan waktu; Acak tetap 100% acak dan hanya berisi post beraudio
+- Post: tulisan (panjang tidak dibatasi), maksimal 1 audio (15 detik, 1 MB), atau keduanya; minimal salah satu harus ada
+- Audio bisa dipilih sebagai audio biasa atau backsound (terputar otomatis saat post terlihat, bisa dibisukan pembaca)
+- Acak: memilih satu post secara acak seragam, termasuk post teks saja dan post backsound; Hups: linimasa dengan komentar bersarang (komentar hanya tulisan), tag @akun, sematkan komentar, laporan
+- Urutan Hups: waktu 35%, sorot 25%, komentar 25%, kecocokan dengan pencarian pembaca 15%
+- Hitungan "dilihat" dan "diputar": satu kali per akun per post; "diputar" hanya untuk post dengan audio biasa
+- Pencarian mencakup akun (nama, nama pengguna, bio), isi post, penulis, tag, dan komentar
+- Mode offline: aplikasi tetap terbuka, Acak memutar audio yang tersimpan, Audio offline bisa diputar
+- Deks: pemeriksa buatan Hulhup yang menandai audio dan foto bila ada bukti AI di dalam berkasnya
 - Setiap post dan akun punya alamat sendiri: https://hulhup.my.id/p/ID dan https://hulhup.my.id/u/NAMA
-- Lupa sandi lewat kode pemulihan (tanpa email); FAQ ada di aplikasi (/faq)
-- Acak adil: setiap audio yang berhak didengar punya peluang sama
-- Privasi per audio: publik, pengikut, mengikuti, keduanya, teman, sahabat, pasangan, keluarga, atau akun tertentu
-- Privasi tampilan profil diatur pengguna di Pengaturan
+- Lupa sandi lewat kode pemulihan (tanpa email)
+- Privasi per post: publik, pengikut, mengikuti, keduanya, teman, sahabat, pasangan, keluarga, atau akun tertentu
 - Tidak ada API publik; data hanya diakses lewat aplikasi
 - Bahasa: Indonesia dan Inggris

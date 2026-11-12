@@ -22,5 +22,23 @@ User-agent: Googlebot
 Allow: /
 User-agent: Bingbot
 Allow: /
+User-agent: Applebot
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: DuckDuckBot
+Allow: /
+User-agent: Amazonbot
+Allow: /
+User-agent: Meta-ExternalAgent
+Allow: /
+User-agent: YandexBot
+Allow: /
+User-agent: Baiduspider
+Allow: /
+
+# Data pribadi dan API tidak untuk dirayapi.
+User-agent: *
+Disallow: /api/
 
 Sitemap: https://hulhup.my.id/sitemap.xml
