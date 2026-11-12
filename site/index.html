@@ -35,18 +35,17 @@
   <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#FFFFFF;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
     #splash{position:fixed;left:0;top:0;width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#FFFFFF;color:#111111;z-index:9;transition:opacity .25s}
-    #splash svg{width:112px;height:112px;display:block;filter:drop-shadow(0 14px 28px rgba(255,98,79,.28))}
-    #splash .dot{transform-box:fill-box;transform-origin:50% 100%;animation:hop 1.1s cubic-bezier(.3,0,.3,1) infinite}
-    @keyframes hop{0%{transform:translateY(0) scale(1,1)}34%{transform:translateY(-62px) scale(1,1)}62%{transform:translateY(0) scale(1,1)}78%{transform:translateY(0) scale(1.18,.82)}100%{transform:translateY(0) scale(1,1)}}
-    #splash .foot{position:absolute;left:0;right:0;bottom:56px;text-align:center;font-weight:800;font-size:22px;letter-spacing:-.4px}
-    @media (prefers-color-scheme:dark){html,body,#splash{background:#0B0B0B;color:#F2F2F2}}
-    @media (prefers-reduced-motion:reduce){#splash .dot{animation:none}}
+    #splash svg{width:120px;height:120px;display:block;overflow:visible}
+    #splash .u{stroke:#111}
+    #splash .ball{transform-box:fill-box;transform-origin:50% 100%;animation:hop 1.2s infinite}
+    @keyframes hop{0%{transform:translateY(0) scale(1,1);animation-timing-function:cubic-bezier(.5,0,.9,.6)}38%{transform:translateY(212px) scale(1,1)}45%{transform:translateY(212px) scale(1.22,.78)}52%{transform:translateY(212px) scale(1,1);animation-timing-function:cubic-bezier(.1,.5,.3,1)}100%{transform:translateY(0) scale(1,1)}}
+    @media (prefers-color-scheme:dark){html,body,#splash{background:#0B0B0B;color:#F2F2F2}#splash .u{stroke:#F2F2F2}}
+    @media (prefers-reduced-motion:reduce){#splash .ball{animation:none}}
   </style>
 </head>
 <body>
   <div id="splash" aria-hidden="true">
-    <svg viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset=".5" stop-color="#FF624F"/><stop offset="1" stop-color="#F23F6C"/></linearGradient></defs><rect width="512" height="512" rx="115" fill="url(#g)"/><g fill="#fff"><rect x="138" y="102" width="77" height="308" rx="38"/><rect x="297" y="225" width="77" height="185" rx="38"/><rect x="138" y="225" width="236" height="77" rx="38"/><circle class="dot" cx="336" cy="146" r="43"/></g></svg>
-    <div class="foot">Hulhup</div>
+    <svg viewBox="0 0 512 512" aria-hidden="true"><path class="u" d="M163.8 243.6V319.6A92.2 92.2 0 0 0 348.2 319.6V243.6" fill="none" stroke-width="69.1" stroke-linecap="round" stroke-linejoin="round"/><circle class="ball" cx="256" cy="121.4" r="46.1" fill="#FFC400"/></svg>
   </div>
   <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Hulhup — ketuk, dengarkan suara acak</h1>
   <noscript><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
