@@ -3,7 +3,7 @@
 name: deploy-web
 on: workflow_dispatch
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
@@ -77,6 +77,13 @@ jobs:
           cp app/build/app/outputs/flutter-apk/app-release.apk app/build/web/_f/$DIR/hulhup.apk
           S64=$(stat -c%s app/build/web/_f/$DIR/hulhup.apk)
           echo "{\"build\": ${{ github.run_number }}, \"version\": \"1.3.0\", \"size\": $S64, \"size32\": $S64}" > app/build/web/_f/$DIR/version.json
+      - name: Simpan APK di GitHub (Releases, hanya untuk pemilik repo bila repo private)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/app/outputs/flutter-apk/app-release.apk /tmp/hulhup.apk
+          gh release create "apk-${{ github.run_number }}" /tmp/hulhup.apk --repo "$GITHUB_REPOSITORY" --title "Hulhup build ${{ github.run_number }}" --notes "Build ${{ github.run_number }}" --latest
       - name: Terbitkan ke Vercel (jika VERCEL_TOKEN ada)
         if: ${{ env.VT != '' }}
         run: npx --yes vercel@latest deploy app/build/web --prod --yes --token "$VT"
