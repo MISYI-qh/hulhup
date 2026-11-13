@@ -1,6 +1,6 @@
 // Berkas pembaruan aplikasi: hanya diberikan kepada aplikasi yang sudah terpasang (membawa kunci). Selain itu: 404, seolah tidak ada.
 const KEY = '__DL_KEY__', DIR = '__DL_DIR__';
-const LEGACY = true; // versi lama (sebelum kunci) mengenali dirinya lewat Dart/; matikan setelah semua pengguna memperbarui
+const LEGACY = false; // jalur versi lama sudah ditutup: hanya aplikasi dengan kunci yang dilayani
 module.exports = (req, res) => {
   const f = String(req.query.f || '');
   const ua = String(req.headers['user-agent'] || '');
