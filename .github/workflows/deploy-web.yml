@@ -80,4 +80,5 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with: { path: app/build/web }
       - id: dep
+        continue-on-error: true
         uses: actions/deploy-pages@v4
