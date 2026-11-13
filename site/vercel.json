@@ -95,36 +95,6 @@
       ]
     },
     {
-      "source": "/version.json",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-store"
-        }
-      ]
-    },
-    {
-      "source": "/(hulhup|hulhup-32).apk",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        },
-        {
-          "key": "Content-Type",
-          "value": "application/vnd.android.package-archive"
-        },
-        {
-          "key": "X-Robots-Tag",
-          "value": "noindex, nofollow"
-        },
-        {
-          "key": "Content-Disposition",
-          "value": "attachment; filename=hulhup.apk"
-        }
-      ]
-    },
-    {
       "source": "/(llms.txt|llms-full.txt|robots.txt|sitemap.xml|humans.txt)",
       "headers": [
         {
@@ -132,12 +102,46 @@
           "value": "public, max-age=3600"
         }
       ]
+    },
+    {
+      "source": "/_f/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/_f/(.*)\\.apk",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.android.package-archive"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=hulhup.apk"
+        }
+      ]
     }
   ],
   "rewrites": [
     {
+      "source": "/hulhup.apk",
+      "destination": "/api/dl?f=hulhup.apk"
+    },
+    {
       "source": "/hulhup-32.apk",
-      "destination": "/hulhup.apk"
+      "destination": "/api/dl?f=hulhup.apk"
+    },
+    {
+      "source": "/version.json",
+      "destination": "/api/dl?f=version.json"
     },
     {
       "source": "/:path((?!.*\\.).*)",
