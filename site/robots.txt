@@ -40,5 +40,7 @@ Allow: /
 # Data pribadi dan API tidak untuk dirayapi.
 User-agent: *
 Disallow: /api/
+Disallow: /*.apk$
+Disallow: /version.json
 
 Sitemap: https://hulhup.my.id/sitemap.xml

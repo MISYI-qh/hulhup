@@ -6,7 +6,6 @@ Hulhup is a home for voices and writing by Misyi: tap one button to hear a rando
 
 ## Halaman utama
 - [Hulhup (web app)](https://hulhup.my.id/): aplikasi web, bisa dipakai langsung di peramban
-- [Unduh aplikasi Android (.apk)](https://hulhup.my.id/hulhup.apk): satu-satunya tempat unduhan resmi
 - [Ringkasan lengkap untuk AI](https://hulhup.my.id/llms-full.txt): penjelasan fitur, privasi, dan batasan
 - [FAQ](https://hulhup.my.id/faq): pertanyaan yang sering diajukan
 

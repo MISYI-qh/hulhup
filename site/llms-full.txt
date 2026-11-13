@@ -1,9 +1,9 @@
 # Hulhup — ringkasan lengkap
 
-Hulhup (https://hulhup.my.id) adalah ruang suara dan tulisan dari Misyi, lahir pada 1 Oktober 2026. Tersedia di web dan sebagai aplikasi Android dengan akun dan data yang sama.
+Hulhup (https://hulhup.my.id) adalah ruang suara dan tulisan dari Misyi, lahir pada 1 Oktober 2026.
 
 ## Cara kerja
-1. Buka aplikasi (web atau Android) dan ketuk tombol utama (Acak).
+1. Buka Hulhup dan ketuk tombol utama (Acak).
 2. Hulhup menampilkan satu post acak dari pengguna lain yang memang mengizinkan kamu melihat atau mendengarnya.
 3. Sorot post, ikuti pembuatnya, komentar, atau simpan. Tanpa akun kamu tetap bisa melihat dan mendengar.
 4. Buat post sendiri: tulisan, audio (maks 15 detik, 1 MB), atau keduanya, lalu pilih siapa yang boleh melihatnya.
@@ -45,7 +45,7 @@ Setiap halaman punya alamat sendiri, mis. /p/ID (post), /u/NAMA (akun), /hups, /
 Laporan konten/akun masuk ke server dan ditinjau manual oleh tim; tidak ada tindakan otomatis.
 
 ## Teknis
-Aplikasi Flutter (Android + web). Server Node.js di Vercel, database Postgres, audio di penyimpanan cloud. Tidak ada API publik untuk pihak ketiga.
+Dibuat dengan Flutter. Server Node.js di Vercel, database Postgres, audio di penyimpanan cloud. Tidak ada API publik untuk pihak ketiga.
 
 ## Kontak
 Misyi — https://hulhup.my.id

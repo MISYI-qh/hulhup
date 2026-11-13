@@ -30,7 +30,7 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://hulhup-api.vercel.app" crossorigin>
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"WebApplication","name":"Hulhup","url":"https://hulhup.my.id/","description":"Ruang suara dan tulisan: ketuk satu tombol untuk mendengar suara acak (maks 15 detik) dari pengguna lain, atau jelajahi post tulisan dan audio.","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Android, Web","inLanguage":["id","en"],"offers":{"@type":"Offer","price":"0","priceCurrency":"IDR"},"creator":{"@type":"Organization","name":"Misyi"},"datePublished":"2026-10-01"}
+  {"@context":"https://schema.org","@type":"WebApplication","name":"Hulhup","url":"https://hulhup.my.id/","description":"Ruang suara dan tulisan: ketuk satu tombol untuk mendengar suara acak (maks 15 detik) dari pengguna lain, atau jelajahi post tulisan dan audio.","applicationCategory":"SocialNetworkingApplication","operatingSystem":"Web","inLanguage":["id","en"],"offers":{"@type":"Offer","price":"0","priceCurrency":"IDR"},"creator":{"@type":"Organization","name":"Misyi"},"datePublished":"2026-10-01"}
   </script>
   <style>
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#FFFFFF;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -56,10 +56,23 @@
   <div id="splash" aria-hidden="true">
     <div class="row"><svg viewBox="16 20 88 66" aria-hidden="true"><defs><clipPath id="c"><rect x="-200" y="-200" width="520" height="282.4"/></clipPath></defs><g clip-path="url(#c)"><g class="eyes"><g class="eye"><ellipse class="e" cx="44" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="46.3" cy="49.9" r="5.9"/></g><g class="eye"><ellipse class="e" cx="76" cy="53.6" rx="13.3" ry="16"/><circle class="pu p" cx="78.3" cy="49.9" r="5.9"/></g></g></g><rect class="w" x="21.6" y="60" width="76.8" height="22.4" rx="7.5"/></svg><span class="t"><b>Hulhup</b></span></div>
   </div>
+  <main id="seo" style="position:fixed;left:0;top:0;width:100%;height:100%;overflow:auto;background:inherit;z-index:8">
+    <section style="max-width:640px;margin:0 auto;padding:96px 24px 48px;text-align:center">
+      <h2 style="font:700 40px/1.15 system-ui,sans-serif;margin:0 0 14px">Ketuk, dengarkan suara acak</h2>
+      <p style="font:400 18px/1.55 system-ui,sans-serif;opacity:.75;margin:0 0 28px">Satu tombol, satu suara singkat (maks 15 detik) dari orang lain. Bisa juga tulisan. Kamu yang mengatur siapa boleh melihat post-mu.</p>
+      <ul style="list-style:none;padding:0;margin:0;display:grid;gap:12px;text-align:left;font:500 16px/1.5 system-ui,sans-serif">
+        <li><b>Acak</b> — dengarkan suara atau tulisan acak dari pengguna lain.</li>
+        <li><b>Hups</b> — jelajahi post terbaru dan dari orang yang kamu ikuti.</li>
+        <li><b>Hubungan</b> — beri nama hubungan sendiri dan pilih siapa yang boleh melihat.</li>
+        <li><b>Backsound</b> — audio bisa dipakai sebagai latar tulisan.</li>
+      </ul>
+      <p style="margin:28px 0 0;font:500 14px system-ui,sans-serif;opacity:.7"><a href="/about">Tentang</a> · <a href="/faq">FAQ</a> · <a href="/policy">Kebijakan</a> · <a href="/privacy">Privasi</a></p>
+    </section>
+  </main>
   <h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Hulhup — ketuk, dengarkan suara acak</h1>
-  <noscript><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
+  <noscript><style>#seo{display:block!important}#splash{display:none}</style><p style="padding:24px">Hulhup butuh JavaScript. Hulhup adalah aplikasi audio singkat: ketuk satu tombol untuk mendengar suara acak (maks 15 detik). Info untuk AI/mesin pencari: <a href="/llms.txt">llms.txt</a>.</p></noscript>
   <script>
-    (function(){var s=document.getElementById('splash');function d(){if(!s)return;s.style.opacity=0;setTimeout(function(){s&&s.remove();s=null},260)}
+    (function(){var s=document.getElementById('splash'),q=document.getElementById('seo');function d(){if(q){q.remove();q=null}if(!s)return;s.style.opacity=0;setTimeout(function(){s&&s.remove();s=null},260)}
     window.addEventListener('flutter-first-frame',d);setTimeout(d,15000)})();
   </script>
   <script src="/flutter_bootstrap.js" async></script>

@@ -115,6 +115,10 @@
           "value": "application/vnd.android.package-archive"
         },
         {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
           "key": "Content-Disposition",
           "value": "attachment; filename=hulhup.apk"
         }
